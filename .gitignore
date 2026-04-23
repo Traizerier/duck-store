@@ -1,0 +1,64 @@
+# ============================================================
+# OS / editor
+# ============================================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================================================
+# Logs
+# ============================================================
+*.log
+logs/
+npm-debug.log*
+
+# ============================================================
+# Environment files (keep .env.example committed; real .env never)
+# ============================================================
+.env
+.env.local
+.env.*.local
+
+# ============================================================
+# Node — warehouse-service, frontend
+# ============================================================
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+
+# ============================================================
+# Go — store-service
+# ============================================================
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+bin/
+vendor/
+
+# ============================================================
+# Python (python-packages/ is reference material from another
+# project, not part of duck-store. Gitignored so reviewers don't
+# wonder why Python is in a Go+JS repo.)
+# ============================================================
+python-packages/
+__pycache__/
+*.pyc
+*.pyo
+
+# ============================================================
+# Claude Code
+# ============================================================
+# User-specific permissions override — never commit.
+# Shared team config (agents/, audit-standards/, skills/, hooks/)
+# stays tracked.
+.claude/settings.local.json
