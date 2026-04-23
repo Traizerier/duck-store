@@ -4,18 +4,10 @@ function toDuck(doc) {
   return { id: _id, ...rest };
 }
 
-export function createDuckRepo(db) {
+// Takes a counters helper (from db/mongo.js) so ID generation lives in the
+// db layer, not here. The repo only speaks in ducks.
+export function createDuckRepo(db, counters) {
   const ducks = db.collection("ducks");
-  const counters = db.collection("counters");
-
-  async function nextId() {
-    const result = await counters.findOneAndUpdate(
-      { _id: "ducks" },
-      { $inc: { seq: 1 } },
-      { upsert: true, returnDocument: "after" },
-    );
-    return result.seq;
-  }
 
   return {
     async findMatch({ color, size, price }) {
@@ -31,16 +23,22 @@ export function createDuckRepo(db) {
     },
 
     async insert(duck) {
-      const _id = await nextId();
+      const _id = await counters.nextId("ducks");
       const doc = { _id, ...duck };
       await ducks.insertOne(doc);
       return toDuck(doc);
     },
 
+    // Mutations below all include `deleted: false` in the filter so the
+    // repo enforces the logical-deletion rule at its own boundary — a
+    // caller that skips the service layer can't mutate, resurrect, or
+    // re-delete a tombstoned duck. Returns null if no active row matches;
+    // the service layer maps that to NotFoundError.
+
     async update(id, fields) {
       return toDuck(
         await ducks.findOneAndUpdate(
-          { _id: id },
+          { _id: id, deleted: false },
           { $set: fields },
           { returnDocument: "after" },
         ),
@@ -50,7 +48,7 @@ export function createDuckRepo(db) {
     async incrementQuantity(id, delta) {
       return toDuck(
         await ducks.findOneAndUpdate(
-          { _id: id },
+          { _id: id, deleted: false },
           { $inc: { quantity: delta } },
           { returnDocument: "after" },
         ),
@@ -60,7 +58,7 @@ export function createDuckRepo(db) {
     async softDelete(id) {
       return toDuck(
         await ducks.findOneAndUpdate(
-          { _id: id },
+          { _id: id, deleted: false },
           { $set: { deleted: true } },
           { returnDocument: "after" },
         ),

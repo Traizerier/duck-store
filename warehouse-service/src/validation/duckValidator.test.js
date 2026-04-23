@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateDuckInput } from "./duckValidator.js";
+import { validateDuckInput, validateLookupQuery } from "./duckValidator.js";
 
 const validInput = Object.freeze({
   color: "Red",
@@ -128,6 +128,39 @@ describe("validateDuckInput", () => {
       expect(result.errors.size).toBeDefined();
       expect(result.errors.price).toBeDefined();
       expect(result.errors.quantity).toBeDefined();
+    });
+  });
+
+  describe("validateLookupQuery", () => {
+    it("accepts valid color + size", () => {
+      const result = validateLookupQuery({ color: "Red", size: "Large" });
+      expect(result.valid).toBe(true);
+    });
+
+    it("rejects unknown color", () => {
+      const result = validateLookupQuery({ color: "Purple", size: "Large" });
+      expect(result.valid).toBe(false);
+      expect(result.errors.color).toBeDefined();
+    });
+
+    it("rejects unknown size", () => {
+      const result = validateLookupQuery({ color: "Red", size: "Huge" });
+      expect(result.valid).toBe(false);
+      expect(result.errors.size).toBeDefined();
+    });
+
+    it("rejects missing color and size", () => {
+      const result = validateLookupQuery({});
+      expect(result.valid).toBe(false);
+      expect(result.errors.color).toBeDefined();
+      expect(result.errors.size).toBeDefined();
+    });
+
+    it("rejects null/undefined input", () => {
+      const result = validateLookupQuery(undefined);
+      expect(result.valid).toBe(false);
+      expect(result.errors.color).toBeDefined();
+      expect(result.errors.size).toBeDefined();
     });
   });
 

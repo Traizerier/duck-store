@@ -4,6 +4,7 @@ import { MongoClient } from "mongodb";
 import { createDuckRepo } from "./repos/duckRepo.js";
 import { createDuckService } from "./services/duckService.js";
 import { createApp } from "./app.js";
+import { createCounters } from "./db/mongo.js";
 
 const validInput = Object.freeze({
   color: "Red",
@@ -20,7 +21,7 @@ beforeAll(async () => {
   const uri = process.env.MONGO_URL || "mongodb://localhost:27017";
   client = await MongoClient.connect(uri);
   db = client.db("duckstore_test_routes");
-  const repo = createDuckRepo(db);
+  const repo = createDuckRepo(db, createCounters(db));
   const service = createDuckService(repo);
   const app = createApp(service);
   request = supertest(app);
@@ -96,6 +97,31 @@ describe("GET /api/ducks/lookup", () => {
     const res = await request.get("/api/ducks/lookup?color=Red&size=Large");
     expect(res.status).toBe(404);
   });
+
+  // Item 011: boundary validation for /lookup. Missing or out-of-enum color/size
+  // must return 400 ValidationError, not 404 — otherwise `color=undefined`
+  // leaks into logs and clients can't distinguish "sold out" from "bad input."
+  it("should return 400 ValidationError when color and size are missing", async () => {
+    const res = await request.get("/api/ducks/lookup");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
+    expect(res.body.errors.color).toBeDefined();
+    expect(res.body.errors.size).toBeDefined();
+  });
+
+  it("should return 400 ValidationError for an unknown color", async () => {
+    const res = await request.get("/api/ducks/lookup?color=Purple&size=Large");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
+    expect(res.body.errors.color).toBeDefined();
+  });
+
+  it("should return 400 ValidationError for an unknown size", async () => {
+    const res = await request.get("/api/ducks/lookup?color=Red&size=Huge");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
+    expect(res.body.errors.size).toBeDefined();
+  });
 });
 
 describe("PATCH /api/ducks/:id", () => {
@@ -133,6 +159,27 @@ describe("PATCH /api/ducks/:id", () => {
     const res = await request.patch("/api/ducks/999").send({ price: 15 });
     expect(res.status).toBe(404);
   });
+
+  // Item 010: boundary validation for :id. A non-integer or non-positive id
+  // is a malformed request, not a missing row — must be 400, not 404.
+  it("should return 400 ValidationError for a non-numeric id", async () => {
+    const res = await request.patch("/api/ducks/abc").send({ price: 15 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
+    expect(res.body.errors.id).toBeDefined();
+  });
+
+  it("should return 400 ValidationError for a non-integer id", async () => {
+    const res = await request.patch("/api/ducks/1.5").send({ price: 15 });
+    expect(res.status).toBe(400);
+    expect(res.body.errors.id).toBeDefined();
+  });
+
+  it("should return 400 ValidationError for a non-positive id", async () => {
+    const res = await request.patch("/api/ducks/0").send({ price: 15 });
+    expect(res.status).toBe(400);
+    expect(res.body.errors.id).toBeDefined();
+  });
 });
 
 describe("DELETE /api/ducks/:id", () => {
@@ -163,5 +210,12 @@ describe("DELETE /api/ducks/:id", () => {
     await request.delete(`/api/ducks/${existing.id}`);
     const res = await request.delete(`/api/ducks/${existing.id}`);
     expect(res.status).toBe(404);
+  });
+
+  it("should return 400 ValidationError for a non-numeric id", async () => {
+    const res = await request.delete("/api/ducks/not-a-number");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
+    expect(res.body.errors.id).toBeDefined();
   });
 });

@@ -31,6 +31,26 @@ export function validateDuckInput(input) {
   };
 }
 
+// Used by the /api/ducks/lookup route. Checks color + size against the
+// shared enums so unknown/missing values surface as 400 ValidationError
+// instead of tunneling through to "no duck found" 404s.
+export function validateLookupQuery(query) {
+  const data = query ?? {};
+  const errors = {};
+
+  if (!COLORS.includes(data.color)) {
+    errors.color = `must be one of: ${COLORS.join(", ")}`;
+  }
+  if (!SIZES.includes(data.size)) {
+    errors.size = `must be one of: ${SIZES.join(", ")}`;
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+  };
+}
+
 export function validateDuckUpdate(fields) {
   const data = fields ?? {};
   const errors = {};

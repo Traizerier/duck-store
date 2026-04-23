@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { MongoClient } from "mongodb";
 import { createDuckRepo } from "./duckRepo.js";
+import { createCounters } from "../db/mongo.js";
 
 const validDuck = Object.freeze({
   color: "Red",
@@ -28,7 +29,7 @@ let repo;
 beforeEach(async () => {
   await db.collection("ducks").deleteMany({});
   await db.collection("counters").deleteMany({});
-  repo = createDuckRepo(db);
+  repo = createDuckRepo(db, createCounters(db));
 });
 
 describe("DuckRepo.insert", () => {
@@ -119,6 +120,15 @@ describe("DuckRepo.update", () => {
     expect(updated.quantity).toBe(5);
     expect(updated.color).toBe("Red");
   });
+
+  it("should not touch a logically-deleted duck (returns null)", async () => {
+    const { id } = await repo.insert({ ...validDuck, deleted: true });
+    const result = await repo.update(id, { price: 999 });
+    expect(result).toBeNull();
+    // Raw Mongo verification — price must still be the original.
+    const raw = await db.collection("ducks").findOne({ _id: id });
+    expect(raw.price).toBe(10);
+  });
 });
 
 describe("DuckRepo.incrementQuantity", () => {
@@ -127,6 +137,14 @@ describe("DuckRepo.incrementQuantity", () => {
     const updated = await repo.incrementQuantity(id, 3);
     expect(updated.quantity).toBe(8);
   });
+
+  it("should not increment a logically-deleted duck (returns null)", async () => {
+    const { id } = await repo.insert({ ...validDuck, deleted: true, quantity: 5 });
+    const result = await repo.incrementQuantity(id, 100);
+    expect(result).toBeNull();
+    const raw = await db.collection("ducks").findOne({ _id: id });
+    expect(raw.quantity).toBe(5);
+  });
 });
 
 describe("DuckRepo.softDelete", () => {
@@ -134,6 +152,12 @@ describe("DuckRepo.softDelete", () => {
     const { id } = await repo.insert(validDuck);
     const updated = await repo.softDelete(id);
     expect(updated.deleted).toBe(true);
+  });
+
+  it("should return null for an already-deleted duck", async () => {
+    const { id } = await repo.insert({ ...validDuck, deleted: true });
+    const result = await repo.softDelete(id);
+    expect(result).toBeNull();
   });
 });
 
