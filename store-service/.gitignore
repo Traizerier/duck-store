@@ -1,0 +1,22 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Test output
+*.test
+*.out
+coverage.out
+
+# Vendor (if used)
+vendor/
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log

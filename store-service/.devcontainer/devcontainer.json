@@ -1,0 +1,44 @@
+{
+  "name": "store-service (Go)",
+
+  "dockerComposeFile": [
+    "../../docker-compose.yml",
+    "../../docker-compose.dev.yml"
+  ],
+  "service": "store",
+  "runServices": ["mongo", "warehouse", "store"],
+  "workspaceFolder": "/workspace",
+
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "upgradePackages": true
+    },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+
+  "forwardPorts": [4001, 4002, 27017],
+  "portsAttributes": {
+    "4001": { "label": "warehouse-service" },
+    "4002": { "label": "store-service" },
+    "27017": { "label": "mongodb" }
+  },
+
+  "postCreateCommand": "cd /workspace/store-service && go mod download && { [ -f .env ] || cp .env.example .env; }",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "go.toolsManagement.checkForUpdates": "local",
+        "go.useLanguageServer": true
+      }
+    }
+  },
+
+  "shutdownAction": "stopCompose"
+}
