@@ -1,0 +1,9 @@
+# Duck Store — minimum tool versions.
+#
+# Format: <tool> <minimum major version>
+# Compatible with asdf/mise (both will install "latest of that major").
+# setup.sh reads this as a minimum floor; update.sh bumps it.
+
+node 20
+go 1.22
+docker 2

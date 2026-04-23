@@ -1,0 +1,61 @@
+# Development overrides — layered on top of docker-compose.yml.
+# Used by run.sh (the canonical dev entry point) and optionally by
+# VS Code devcontainers (which is only used for editor attach now).
+#
+# Container commands install deps and then sleep — the container stays
+# alive so you can attach / exec / run `npm test` or `npm run dev` yourself.
+# Output of `npm install` is visible via `bash run.sh` foreground or
+# `bash run.sh logs warehouse`.
+
+services:
+  warehouse:
+    volumes:
+      - ./:/workspace:cached
+      - warehouse-node-modules:/workspace/warehouse-service/node_modules
+    working_dir: /workspace/warehouse-service
+    command: >
+      sh -c "
+        [ -f .env ] || cp .env.example .env;
+        npm install;
+        npm run dev
+      "
+    environment:
+      NODE_ENV: "${NODE_ENV:-development}"
+
+  store:
+    build:
+      context: ./store-service
+      target: base
+    volumes:
+      - ./:/workspace:cached
+      - go-mod-cache:/go/pkg/mod
+    working_dir: /workspace/store-service
+    command: >
+      sh -c "
+        [ -f .env ] || cp .env.example .env;
+        go mod download;
+        go run ./cmd/server
+      "
+
+  frontend:
+    build:
+      context: ./frontend
+    volumes:
+      - ./:/workspace:cached
+      - frontend-node-modules:/workspace/frontend/node_modules
+    working_dir: /workspace/frontend
+    command: >
+      sh -c "
+        [ -f .env ] || cp .env.example .env;
+        npm install;
+        npm run dev
+      "
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
+    environment:
+      NODE_ENV: "${NODE_ENV:-development}"
+
+volumes:
+  warehouse-node-modules:
+  go-mod-cache:
+  frontend-node-modules:

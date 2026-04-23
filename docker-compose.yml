@@ -1,0 +1,40 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: duckstore-mongo
+    ports:
+      - "${MONGO_HOST_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+
+  warehouse:
+    profiles: ["full"]
+    build: ./warehouse-service
+    container_name: duckstore-warehouse
+    ports:
+      - "${WAREHOUSE_HOST_PORT:-4001}:4001"
+    environment:
+      PORT: "4001"
+      MONGO_URL: "mongodb://mongo:27017"
+      MONGO_DB: "${MONGO_DB:-duckstore}"
+      NODE_ENV: "${NODE_ENV:-production}"
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  store:
+    profiles: ["full"]
+    build: ./store-service
+    container_name: duckstore-store
+    ports:
+      - "${STORE_HOST_PORT:-4002}:4002"
+    environment:
+      PORT: "4002"
+      WAREHOUSE_URL: "http://warehouse:4001"
+    depends_on:
+      - warehouse
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
