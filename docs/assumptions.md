@@ -47,8 +47,12 @@ The spec leaves a number of details open. Each decision below is a pragmatic rea
 
 ## Cross-cutting
 
-### Color palette source of truth
-- Warehouse owns the canonical color list (`src/constants/ducks.js`). Store's order validator hardcodes the same list because there's no shared schema between services. If a mismatch emerges, the warehouse is authoritative — update the store and redeploy.
+### Shared enums (colors + sizes)
+- `shared/enums.json` at the repo root is the single source of truth for the color and size lists. Every service loads it:
+  - **warehouse-service** reads it at module-load time in `src/constants/ducks.js`.
+  - **frontend** imports the JSON in `src/constants/ducks.ts` (Vite inlines it).
+  - **store-service** loads it at `main()` startup via `internal/enums.Load` and injects the result into `order.Handler`. Path is `ENUMS_PATH` (default: `../shared/enums.json`).
+- The one exception is `store-service/internal/packaging.Size` — a typed Go `const` block used for pattern-matching in the packaging Strategy. Those can't be populated from runtime data, so `internal/packaging/enums_drift_test.go` guards against divergence from `shared/enums.json`.
 
 ### Frontend
 - UI targets the warehouse module only. Store's `/api/orders` has no UI per spec.

@@ -1,8 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "../i18n/locale";
-
-const COLORS = ["Red", "Green", "Yellow", "Black"] as const;
-const SIZES = ["XLarge", "Large", "Medium", "Small", "XSmall"] as const;
+import { COLORS, SIZES } from "../constants/ducks";
 
 export interface DuckFormValues {
   color: string;
