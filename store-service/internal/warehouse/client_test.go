@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -49,7 +50,29 @@ func TestClient_LookupPrice_NotFound(t *testing.T) {
 
 	_, err := NewClient(server.URL).LookupPrice(context.Background(), "Red", "Large")
 	if err == nil {
-		t.Error("expected error for 404, got nil")
+		t.Fatal("expected error for 404, got nil")
+	}
+	// Caller needs errors.Is to distinguish "duck missing" from upstream
+	// faults — plain errors.New strings force fragile string matching.
+	if !errors.Is(err, ErrDuckNotFound) {
+		t.Errorf("errors.Is(err, ErrDuckNotFound) = false; err = %v", err)
+	}
+}
+
+// 500 must NOT be classified as ErrDuckNotFound — that's what distinguishes
+// a legitimate upstream fault (502) from "we answered, no duck exists" (404).
+func TestClient_LookupPrice_ServerError_IsNotDuckNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	_, err := NewClient(server.URL).LookupPrice(context.Background(), "Red", "Large")
+	if err == nil {
+		t.Fatal("expected error for 500, got nil")
+	}
+	if errors.Is(err, ErrDuckNotFound) {
+		t.Errorf("500 should not match ErrDuckNotFound; err = %v", err)
 	}
 }
 

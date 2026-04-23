@@ -3,12 +3,19 @@ package warehouse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+// ErrDuckNotFound is returned (wrapped) by LookupPrice when the warehouse
+// responds 404 — i.e. no active duck matches the requested color+size.
+// Callers use errors.Is to distinguish this from upstream faults so they can
+// surface a 404 to the client instead of a 502.
+var ErrDuckNotFound = errors.New("duck not found")
 
 type Client struct {
 	baseURL string
@@ -42,7 +49,7 @@ func (c *Client) LookupPrice(ctx context.Context, color, size string) (float64, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return 0, fmt.Errorf("no duck found for color=%s, size=%s", color, size)
+		return 0, fmt.Errorf("color=%s, size=%s: %w", color, size, ErrDuckNotFound)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("warehouse returned status %d", resp.StatusCode)

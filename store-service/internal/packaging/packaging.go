@@ -1,5 +1,7 @@
 package packaging
 
+import "fmt"
+
 type Material string
 type Protection string
 type Size string
@@ -25,6 +27,29 @@ const (
 	Sea  ShippingMode = "sea"
 )
 
+// --- shipping modes (registry + validator) ---------------------------------
+// Single source of truth: any code that needs to check or enumerate valid
+// shipping modes reads from here instead of hardcoding its own switch.
+
+var shippingModes = []ShippingMode{Air, Land, Sea}
+
+// ShippingModes returns the canonical list of supported shipping modes in
+// declaration order. Returns a fresh slice so callers can't mutate the
+// package-level registry.
+func ShippingModes() []ShippingMode {
+	return append([]ShippingMode(nil), shippingModes...)
+}
+
+// IsValidShippingMode reports whether m is a supported shipping mode.
+func IsValidShippingMode(m ShippingMode) bool {
+	for _, v := range shippingModes {
+		if v == m {
+			return true
+		}
+	}
+	return false
+}
+
 // --- Strategy pattern -------------------------------------------------------
 // Each strategy exposes the material it uses. Concrete strategies are
 // unexported — outside the package they're only reachable via Build.
@@ -41,16 +66,16 @@ func (woodPackaging) material() Material      { return Wood }
 func (cardboardPackaging) material() Material { return Cardboard }
 func (plasticPackaging) material() Material   { return Plastic }
 
-func strategyForSize(s Size) packagingStrategy {
+func strategyForSize(s Size) (packagingStrategy, error) {
 	switch s {
 	case XLarge, Large:
-		return woodPackaging{}
+		return woodPackaging{}, nil
 	case Medium:
-		return cardboardPackaging{}
+		return cardboardPackaging{}, nil
 	case Small, XSmall:
-		return plasticPackaging{}
+		return plasticPackaging{}, nil
 	}
-	return nil
+	return nil, fmt.Errorf("unknown size %q", s)
 }
 
 // --- Decorator pattern ------------------------------------------------------
@@ -65,28 +90,37 @@ type Package struct {
 func (p Package) Material() Material        { return p.material }
 func (p Package) Protections() []Protection { return p.protections }
 
-func protectionsFor(material Material, mode ShippingMode) []Protection {
+func protectionsFor(material Material, mode ShippingMode) ([]Protection, error) {
 	switch mode {
 	case Air:
 		if material == Wood || material == Cardboard {
-			return []Protection{Polystyrene}
+			return []Protection{Polystyrene}, nil
 		}
-		return []Protection{BubbleWrap}
+		return []Protection{BubbleWrap}, nil
 	case Land:
-		return []Protection{Polystyrene}
+		return []Protection{Polystyrene}, nil
 	case Sea:
-		return []Protection{MoistureBeads, BubbleWrap}
+		return []Protection{MoistureBeads, BubbleWrap}, nil
 	}
-	return nil
+	return nil, fmt.Errorf("unknown shipping mode %q", mode)
 }
 
 // Build is the public factory: pick a strategy from size, then decorate it
-// with protections derived from the shipping mode.
-func Build(size Size, mode ShippingMode) Package {
-	s := strategyForSize(size)
+// with protections derived from the shipping mode. Returns an error for
+// unknown sizes so callers can't trigger a nil-pointer panic by bypassing
+// upstream validation.
+func Build(size Size, mode ShippingMode) (Package, error) {
+	s, err := strategyForSize(size)
+	if err != nil {
+		return Package{}, fmt.Errorf("packaging.Build: %w", err)
+	}
 	m := s.material()
+	prot, err := protectionsFor(m, mode)
+	if err != nil {
+		return Package{}, fmt.Errorf("packaging.Build: %w", err)
+	}
 	return Package{
 		material:    m,
-		protections: protectionsFor(m, mode),
-	}
+		protections: prot,
+	}, nil
 }
