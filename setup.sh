@@ -185,9 +185,39 @@ run_install_pinned() {
             esac;;
         mac)
             case "$tool" in
-                node)   brew install "node@${require_node_major}";;
-                go)     brew install "go@${require_go}" 2>/dev/null || brew install go;;
-                docker) brew install --cask docker;;
+                node)
+                    local formula="node@${require_node_major}"
+                    if ! brew info "$formula" >/dev/null 2>&1; then
+                        warn "brew has no ${formula} formula — falling back to vendor page."
+                        open_url "$(vendor_url node)"
+                        return 1
+                    fi
+                    info "Installing $formula via brew..."
+                    brew install "$formula"
+                    ;;
+                go)
+                    local formula="go@${require_go}"
+                    if brew info "$formula" >/dev/null 2>&1; then
+                        info "Installing $formula via brew..."
+                        brew install "$formula"
+                    elif brew info go >/dev/null 2>&1; then
+                        warn "brew has no ${formula} — installing 'go' (latest) as best effort."
+                        brew install go
+                    else
+                        warn "brew has no go formula — falling back to vendor page."
+                        open_url "$(vendor_url go)"
+                        return 1
+                    fi
+                    ;;
+                docker)
+                    if ! brew info --cask docker >/dev/null 2>&1; then
+                        warn "brew has no docker cask — falling back to vendor page."
+                        open_url "$(vendor_url docker)"
+                        return 1
+                    fi
+                    info "Installing Docker Desktop via brew cask..."
+                    brew install --cask docker
+                    ;;
             esac;;
         *)
             warn "$tool: auto-install unsupported on $platform — opening vendor page."
