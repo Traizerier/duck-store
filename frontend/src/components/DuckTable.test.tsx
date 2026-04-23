@@ -36,8 +36,8 @@ describe("DuckTable", () => {
 
   it("should format price with USD suffix", () => {
     render(<DuckTable ducks={sampleDucks} onEdit={noop} onDelete={noop} />);
-    expect(screen.getByText("10USD")).toBeInTheDocument();
-    expect(screen.getByText("8USD")).toBeInTheDocument();
+    expect(screen.getByText("10 USD")).toBeInTheDocument();
+    expect(screen.getByText("8 USD")).toBeInTheDocument();
   });
 
   it("should show an empty-state message when no ducks are passed", () => {

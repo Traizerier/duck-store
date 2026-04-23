@@ -39,7 +39,7 @@ export function DuckTable({ ducks, onEdit, onDelete }: DuckTableProps) {
       }),
       columnHelper.accessor("price", {
         header: () => t("col.price"),
-        cell: ({ getValue }) => `${getValue()}USD`,
+        cell: ({ getValue }) => t("price.format", { value: getValue() }),
       }),
       columnHelper.accessor("quantity", {
         header: () => t("col.quantity"),

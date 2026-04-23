@@ -4,7 +4,10 @@ export type Locale = "en" | "es";
 
 // Translation dictionaries. Keep keys flat and namespaced ("col.size", "action.edit")
 // for clarity. Keys that don't need translation (e.g. "ID", "USD") stay inline.
-const translations = {
+// Exported so locale.test.ts can assert the two dictionaries share the same
+// key set (the compile-time TranslationKey alias only catches typos against
+// `en`, not missing keys in `es`).
+export const translations = {
   en: {
     "tab.warehouse": "Warehouse",
     "tab.store": "Store",
@@ -19,6 +22,8 @@ const translations = {
     "col.price": "Price",
     "col.quantity": "Quantity",
     "col.actions": "Actions",
+
+    "price.format": "{value} USD",
 
     "action.edit": "Edit",
     "action.delete": "Delete",
@@ -61,6 +66,8 @@ const translations = {
     "col.quantity": "Cantidad",
     "col.actions": "Acciones",
 
+    "price.format": "{value} USD",
+
     "action.edit": "Editar",
     "action.delete": "Borrar",
     "action.add": "Agregar",
@@ -97,13 +104,24 @@ interface LocaleContextValue {
   t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
-function translate(
+// Exported for unit tests. Application code should use the `useTranslation`
+// hook, which wires locale state through context.
+export function translate(
   locale: Locale,
   key: string,
   vars?: Record<string, string | number>,
 ): string {
   const dict = translations[locale] as Record<string, string>;
-  let str = dict[key] ?? key;
+  let str = dict[key];
+  if (str === undefined) {
+    // Warn in dev so missing keys surface during development instead of
+    // silently rendering the raw key. In production builds
+    // import.meta.env.DEV is statically false and this branch is dead-stripped.
+    if (import.meta.env?.DEV) {
+      console.warn(`[i18n] Missing translation for "${key}" in locale "${locale}"`);
+    }
+    str = key;
+  }
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
       str = str.replaceAll(`{${k}}`, String(v));
