@@ -288,3 +288,43 @@ describe("POST /api/orders", () => {
     expect(res.body.error).toBe("ValidationError");
   });
 });
+
+describe("error middleware — 500 branch", () => {
+  // Separate app with a service that throws an unexpected error (not
+  // ValidationError / NotFoundError), so we hit the 500 fallback.
+  // Stands in a mock inventory service that rejects list() with a
+  // message containing internal-looking detail; the response body
+  // must not echo it back.
+  async function appWithThrowingService() {
+    const { createApp } = await import("./app.js");
+    const { ServiceContainer } = await import("./container.js");
+
+    const throwing = {
+      entityName: "duck",
+      list: async () => {
+        const err = new Error("ENOENT: /internal/secret/path/config.json");
+        err.stack = "Error: ENOENT: /internal/secret/path/config.json\n    at ...";
+        throw err;
+      },
+    };
+    const schema = { name: "duck", plural: "ducks", hasOrders: false };
+    const container = new ServiceContainer();
+    container.register("inventory", throwing);
+    return supertest(createApp(container, schema));
+  }
+
+  it("returns a generic message without leaking err.message", async () => {
+    const { vi } = await import("vitest");
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const req = await appWithThrowingService();
+    const res = await req.get("/api/ducks");
+    errSpy.mockRestore();
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("InternalServerError");
+    expect(res.body.message).toBe("internal error");
+    // Specifically: the internal path must not appear anywhere in the body.
+    expect(JSON.stringify(res.body)).not.toContain("/internal/secret/path");
+    expect(JSON.stringify(res.body)).not.toContain("ENOENT");
+  });
+});

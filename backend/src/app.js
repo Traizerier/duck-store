@@ -27,10 +27,13 @@ export function createApp(container, schema) {
     if (err instanceof NotFoundError) {
       return res.status(404).json({ error: "NotFoundError", message: err.message });
     }
+    // Log the real error server-side for debugging, but don't echo
+    // `err.message` in the response — it can carry internal paths,
+    // Mongo details, or stack-adjacent text we don't want clients to see.
     console.error(err);
     res.status(500).json({
       error: "InternalServerError",
-      message: err.message || "internal error",
+      message: "internal error",
     });
   });
 
