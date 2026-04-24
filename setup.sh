@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # Duck Store — verify & install dependencies for all services.
 # Requires bash. On Windows, use Git Bash or WSL.
-# Reads required versions from .tool-versions and treats them as a minimum
-# floor — anything at or above the listed version is accepted.
+#
+# Docker is the only hard requirement: the dev stack runs in containers
+# (warehouse + store + frontend each with their own image). Node and Go
+# are optional host-side conveniences for running scripts / tests / the
+# VS Code extensions outside the containers. If they're absent, the
+# script skips their setup steps rather than failing.
+#
+# Reads required versions from .tool-versions as a minimum floor —
+# anything at or above the listed version is accepted.
 
 set -uo pipefail
 
@@ -35,14 +42,15 @@ if [ ! -f .tool-versions ]; then
     exit 1
 fi
 while IFS=' ' read -r tool version || [ -n "${tool:-}" ]; do
-    [[ "$tool" =~ ^#.*$ ]] && continue
-    [ -z "${tool:-}" ] && continue
-    # Strip trailing CR so CRLF-line-ending checkouts (Windows git with
-    # core.autocrlf=true) don't smuggle \r into parsed values, which would
-    # (a) make "20" != "20\r" falsely flag a version mismatch, and
-    # (b) corrupt the error output by carriage-returning over itself.
+    # Strip trailing CR first — CRLF-line-ending checkouts (Windows git with
+    # core.autocrlf=true) otherwise smuggle \r into parsed values. Stripping
+    # before the empty/comment checks also prevents blank CRLF lines from
+    # reaching `required[$tool]=$version` with tool="\r" stripped to "",
+    # which triggers a "bad array subscript" warning.
     tool="${tool%$'\r'}"
     version="${version%$'\r'}"
+    [[ "$tool" =~ ^#.*$ ]] && continue
+    [ -z "${tool:-}" ] && continue
     required[$tool]=$version
 done < .tool-versions
 
@@ -88,10 +96,12 @@ with_timeout() {
 }
 
 # ---------- version checks ----------
+# Docker is the only required tool; node/go are optional conveniences
+# for running things on the host rather than inside the containers.
 check_node() {
     if ! command -v node >/dev/null 2>&1; then
-        missing_required+=("node")
-        tool_note[node]="not installed (need v${require_node_major}+)"
+        missing_optional+=("node")
+        tool_note[node]="not installed (optional; containers ship their own node)"
         return
     fi
     local v major
@@ -107,9 +117,12 @@ check_node() {
 
 check_npm() {
     if ! command -v npm >/dev/null 2>&1; then
-        if ! [[ " ${missing_required[*]-} " =~ " node " ]]; then
-            missing_required+=("npm")
-            tool_note[npm]="not installed"
+        # Only flag npm separately if node was already OK — otherwise the
+        # node line already communicates the same story.
+        if ! [[ " ${missing_optional[*]-} " =~ " node " ]] \
+                && ! [[ " ${wrong_version[*]-} " =~ " node " ]]; then
+            missing_optional+=("npm")
+            tool_note[npm]="not installed (optional)"
         fi
         return
     fi
@@ -119,7 +132,7 @@ check_npm() {
 check_go() {
     if ! command -v go >/dev/null 2>&1; then
         missing_optional+=("go")
-        tool_note[go]="not installed (need go${require_go}+)"
+        tool_note[go]="not installed (optional; containers ship their own go)"
         return
     fi
     local v mm
@@ -403,8 +416,12 @@ install_service() {
     [ -d "$dir" ] || { info "Skipping $dir (not present yet)"; return 0; }
 
     if [ -f "$dir/package.json" ]; then
-        info "Installing Node deps in $dir/"
-        (cd "$dir" && npm install) && ok "$dir deps installed" || err "$dir install failed"
+        if command -v npm >/dev/null 2>&1; then
+            info "Installing Node deps in $dir/ (host-side)"
+            (cd "$dir" && npm install) && ok "$dir deps installed" || err "$dir install failed"
+        else
+            info "Skipping $dir npm install (no host node; container will install on first boot)"
+        fi
     fi
 
     if [ -f "$dir/go.mod" ]; then
