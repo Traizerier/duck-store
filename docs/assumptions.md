@@ -1,5 +1,7 @@
 # Assumptions
 
+> **Architecture update (2026-04):** reviewed post-pivot — warehouse and store are now two independent stacks of the same schema-driven Node backend, each with its own inventory and pricing. No inter-backend HTTP.
+
 The spec leaves a number of details open. Each decision below is a pragmatic read of the spec — happy to flip any of them if the reviewer has a different interpretation.
 
 ## Warehouse
@@ -42,18 +44,16 @@ The spec leaves a number of details open. Each decision below is a pragmatic rea
 
 ### Error mapping
 - Validation failures → `400`.
-- Warehouse lookup failure → `502 Bad Gateway` (upstream service fault, not client's fault).
+- Order for a duck that doesn't exist in this stack → `404` (inventory lookup is local; see `backend/src/order/orderService.js`).
 - Any unexpected error → `500`.
 
 ## Cross-cutting
 
 ### Shared enums (colors + sizes)
-- `shared/enums.json` at the repo root is the single source of truth for the color and size lists. Every service loads it:
-  - **warehouse-service** reads it at module-load time in `src/constants/ducks.js`.
-  - **frontend** imports the JSON in `src/constants/ducks.ts` (Vite inlines it).
-  - **store-service** loads it at `main()` startup via `internal/enums.Load` and injects the result into `order.Handler`. Path is `ENUMS_PATH` (default: `../shared/enums.json`).
-- The one exception is `store-service/internal/packaging.Size` — a typed Go `const` block used for pattern-matching in the packaging Strategy. Those can't be populated from runtime data, so `internal/packaging/enums_drift_test.go` guards against divergence from `shared/enums.json`.
+- `shared/enums.json` at the repo root is the single source of truth for color/size lists.
+  - **backend** (both warehouse + store instances of the same image) loads it at boot in `src/schemas/Schema.js`; the schema resolves enum references eagerly so a typo fails fast.
+  - **frontend** imports the JSON in `src/constants/ducks.ts` (Vite inlines it at build time).
 
 ### Frontend
-- UI targets the warehouse module only. Store's `/api/orders` has no UI per spec.
+- Each stack ships its own frontend against its own backend. Page title / instance chip come from `VITE_TITLE` / `VITE_INSTANCE` at build time; the React code in `frontend/src/pages/Inventory.tsx` has no branching on stack identity. Order-placement endpoints (`/api/orders`) have no UI per spec.
 - Color / size labels in the table are bilingual to match the mockup (`Red / Rojo`, `XLarge`, etc.).

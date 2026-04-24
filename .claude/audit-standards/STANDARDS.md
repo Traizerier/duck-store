@@ -9,25 +9,25 @@ Per-project configuration for the code auditor. Each project replaces this file 
 Used when `/audit` is invoked with no path argument.
 
 **Include:**
-- `warehouse-service/src/`
-- `store-service/` (excluding `vendor/`)
+- `backend/src/`
 - `frontend/src/`
+- `shared/` (JSON enums)
 
-**Exclude:** `node_modules/`, `dist/`, `build/`, `coverage/`, `.vite/`, generated files, `*.test.*`, `*_test.go`.
+**Exclude:** `node_modules/`, `dist/`, `build/`, `coverage/`, `.vite/`, generated files, `*.test.*`.
 
 ---
 
 ## Architecture
 
-Three-service microservices project:
+Two parallel stacks from one codebase + a shared frontend:
 
-| Service            | Language / Runtime        | Purpose                                                |
-| ------------------ | ------------------------- | ------------------------------------------------------ |
-| warehouse-service  | Node + Express + MongoDB  | Duck CRUD; source of truth for inventory               |
-| store-service      | Go                        | Order endpoint: packaging (Strategy) + pricing (Chain) |
-| frontend           | React + Vite + TypeScript | Warehouse UI                                           |
+| Component          | Language / Runtime        | Purpose                                                            |
+| ------------------ | ------------------------- | ------------------------------------------------------------------ |
+| backend (warehouse instance) | Node + Express + MongoDB | schema-driven inventory CRUD + order pipeline (packaging + pricing). Its own Mongo container. |
+| backend (store instance)     | Node + Express + MongoDB | same image as warehouse, parameterized by env. Its own Mongo container. |
+| frontend           | React + Vite + TypeScript | Two tabs (Warehouse / Store), each pointed at its own backend via Vite's dev proxy. |
 
-Mongo is owned by warehouse-service. store-service communicates with warehouse over HTTP — **no shared DB access across services**.
+**No inter-backend communication.** Each stack is self-contained; orders placed against the warehouse only see warehouse ducks, and vice versa.
 
 See [`../../docs/plan.md`](../../docs/plan.md) for the full plan and pattern rationale.
 
@@ -44,33 +44,26 @@ See [`../../docs/plan.md`](../../docs/plan.md) for the full plan and pattern rat
 
 ---
 
-## warehouse-service (Node + Express)
+## backend (Node + Express)
 
-- **Naming:** `camelCase` variables/functions, `PascalCase` classes, files either `kebab-case.js` or `camelCase.js` — pick one per service and stay consistent.
-- **Modules:** ES modules or CommonJS — pick one (`"type": "module"` or not) and stay consistent.
+- **Naming:** `camelCase` variables/functions, `PascalCase` classes, files either `kebab-case.js` or `camelCase.js` — stay consistent.
+- **Modules:** ES modules (`"type": "module"`).
 - **Async:** `async/await` only. No bare `.then()` chains; no mixed callback/promise code.
 - **Layering:** `routes/` → `services/` → `repos/` → `db/`. Routes do not touch Mongo directly. Repos do not format HTTP responses.
-- **Error handling:** Services throw domain errors (with a code/type). A central error-handling middleware maps them to HTTP status. No `try/catch` that swallows silently.
-- **Validation:** At the route boundary only (e.g. zod/joi). Internal functions trust their inputs.
-- **Enums:** Color (Red/Green/Yellow/Black) and Size (XLarge/Large/Medium/Small/XSmall) come from a shared constants module — never inlined.
-
-## store-service (Go)
-
-- **Naming:** Packages lowercase single-word. Exported `PascalCase`, unexported `camelCase`. Files `snake_case.go`.
-- **Errors:** `if err != nil { return ..., err }`. Wrap at layer boundaries with `fmt.Errorf("context: %w", err)`. Never ignore an error without a comment explaining why.
-- **Interfaces:** Defined by the consumer (small, 1–3 methods). Concrete types at the package boundary.
-- **Layering:** `cmd/server` wires dependencies. `internal/order` owns the HTTP handler. `internal/packaging` and `internal/pricing` are pure logic. `internal/warehouse` is the outbound HTTP client.
-- **Design patterns:**
-  - Packaging strategies implement a common `PackagingStrategy` interface; decorators wrap them for protection materials.
-  - Pricing rules implement a `Rule` interface and compose in an explicit, documented order.
-- **No magic values.** Discount percentages, surcharges, and thresholds are named constants.
-- **Testing:** Table-driven tests for anything with multiple cases (all pricing rules, packaging rules).
+- **Schema-driven inventory:** the generic CRUD subsystem (`src/inventory/`) reads an entity-type schema at boot and builds validation/repo/routes from it. Hardcoding a specific entity's fields outside of `src/schemas/*.json` is a red flag.
+- **Error handling:** Services throw domain errors (`ValidationError`, `NotFoundError`). A central error-handling middleware maps them to HTTP status. No `try/catch` that swallows silently. Canonical envelope: `{error: TypedCode, message?, errors?}`.
+- **Validation:** At the route boundary only. Internal functions trust their inputs. Schema drives what "valid" means.
+- **Design patterns (duck-specific, order pipeline):**
+  - Packaging uses Strategy + Decorator (size → material → protections).
+  - Pricing uses Chain of Responsibility (ordered rule array mutating a shared context).
+- **No magic values.** Discount percentages, surcharges, thresholds are named constants in the module that uses them.
+- **Testing:** Table-driven for anything with multiple cases. Real Mongo for repo tests; fake repo for service tests; supertest for route tests.
 
 ## frontend (React + TypeScript)
 
 - **Naming:** `PascalCase` component files (`DuckTable.tsx`); `camelCase` hooks prefixed `use` (`useDucks.ts`); `kebab-case` for non-component assets.
 - **Components:** Functional only; no classes. One component per file.
-- **Data fetching:** Through a typed client in `src/api/`. Components never call `fetch` directly.
+- **Data fetching:** Through the typed `ServiceContainer` in `src/services/` (`services.get("warehouseDuck")` etc.). Components never call `fetch` directly.
 - **State:** Local `useState` by default. Lift only when two siblings need it. Avoid premature context/reducers.
 - **Types:** Co-located with the owning component. Move to `src/types/` only when reused in 2+ places.
 - **Styling:** One approach — don't mix CSS modules, Tailwind, and inline styles.
@@ -104,7 +97,9 @@ See [`../../docs/plan.md`](../../docs/plan.md) for the full plan and pattern rat
 
 ## Documentation
 
-- Each service has a `README.md` covering install, run, test, environment variables, and (for store-service) a short design-pattern summary.
+- Each service has a `README.md` covering install, run, test, and environment variables.
+  The backend README also includes a short design-pattern summary (Strategy + Decorator
+  for packaging, Chain of Responsibility for pricing).
 - `docs/plan.md` is the master plan.
 - `docs/logging.md` captures cross-language logging conventions.
 - Spec assumptions live either in the service README or `docs/assumptions.md`.

@@ -5,77 +5,75 @@ Microservices implementation of the rubber duck warehouse & store. See [docs/pla
 ## Prerequisites
 
 - **bash** — required to run `setup.sh` / `run.sh`. On Windows, use **Git Bash** or **WSL**.
-- **Node.js ≥ 20** and **npm** — for `warehouse-service` and `frontend`.
-- **Go ≥ 1.21** — for `store-service` (optional until you start on that service).
-- **Docker + docker compose** — for MongoDB (optional if you run Mongo yourself).
+- **Node.js ≥ 20** and **npm** — for `backend/` and `frontend/`.
+- **Docker + docker compose** — for MongoDB and containerized dev mode.
 
 ## Quickstart
 
 ```bash
-bash setup.sh   # verify prereqs + install all dependencies + seed .env files
-bash run.sh     # start MongoDB + all services in dev mode
+bash setup.sh     # verify prereqs + install all dependencies + seed .env files
+bash run.sh up    # bring up both stacks (warehouse + store) in the background
 ```
 
 On Windows you can also double-click `setup.bat` / `run.bat`, which call the bash scripts via Git Bash.
 
-Press **Ctrl+C** in the `run.sh` terminal to stop everything cleanly.
+Use `bash run.sh down` to stop everything cleanly.
 
 ### Configuration
 
-Three config scopes, by layer:
+The project runs as **two independent compose stacks** (warehouse, store). Each stack is a `{mongo, backend, frontend}` trio with its own network, volume, and lifecycle. Same template (`docker-compose.yml`), parameterized per stack via `.env.<stack>`.
 
-| Scope                  | File                    | Used for                                                                                         |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
-| Compose                | `.env` (repo root)      | Variable substitution in `docker-compose.yml` / `docker-compose.dev.yml` — host ports, DB name, future auth creds. |
-| Service (host mode)    | `<service>/.env`        | What each app reads via `process.env` / `os.Getenv` when running on the host (e.g. via `run.sh`). |
-| Service (container)    | `environment:` in compose | Overrides service `.env` in containers — swaps `localhost` URLs for compose service names.      |
+| Scope            | File              | Used for                                                                                              |
+| ---------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| Per-stack        | `.env.<stack>`    | Variable substitution in `docker-compose.yml` — instance name, host ports, DB name, frontend title.   |
+| In-container     | `environment:` in compose | Runtime overrides inside containers — swaps `localhost` URLs for compose service names.       |
 
-All three start from `.env.example` files; `setup.sh` copies them for you. Never commit actual `.env` files — they're gitignored.
+`.env.warehouse` and `.env.store` are checked in — they hold non-secret config (instance name, host ports, DB name, frontend title), and having them tracked is what makes a clean clone + `bash run.sh up` work without a seeding step. `.env.example` shows the shape for a new stack. Real secrets (DB passwords, API keys) belong in an untracked `.env.<stack>.local` override — those ARE gitignored.
 
-**Example — changing the warehouse host port:**
+**Example — changing the warehouse host ports:**
 
-1. Edit root `.env`: `WAREHOUSE_HOST_PORT=5001`
-2. `docker compose down && docker compose up` — now exposed on `localhost:5001`.
-3. Container-internal port stays 4001, so inter-service URLs (`http://warehouse:4001`) don't change.
+1. Edit `.env.warehouse`: `BACKEND_HOST_PORT=5001`, `FRONTEND_HOST_PORT=5173`.
+2. `bash run.sh down warehouse && bash run.sh up warehouse` — now exposed on the new ports.
+3. Container-internal ports stay fixed (backend `:4001`, frontend `:5173`), so inter-container URLs (`http://backend:4001`) don't change.
 
-For **true secrets** (DB passwords, API keys), the pattern extends naturally: add `MONGO_PASSWORD=` to root `.env`, reference as `${MONGO_PASSWORD}` in compose, keep the actual `.env` off git. If you need stronger guarantees (at-rest encryption, non-env delivery), Docker Compose's `secrets:` block is the upgrade path — we haven't needed it yet.
+For **true secrets** (DB passwords, API keys), keep them in `.env.<stack>.local` (gitignored) and reference as `${VAR}` in compose. If you need stronger guarantees (at-rest encryption, non-env delivery), Docker Compose's `secrets:` block is the upgrade path — we haven't needed it yet.
 
 ### Dev workflow
 
-Lifecycle is explicit — `run.sh` wraps `docker compose` so you always see what's happening (and where it failed).
+`run.sh` wraps `docker compose` so you always see what's happening — and orchestrates both stacks. Each stack is a separate compose project (`duckstore-warehouse`, `duckstore-store`) with no cross-stack DNS or data.
 
 ```bash
-bash run.sh              # foreground: brings up mongo + warehouse, streams logs
-bash run.sh detached     # background variant; returns to your prompt
-bash run.sh ps           # what's running
-bash run.sh logs [svc]   # tail logs
-bash run.sh shell [svc]  # bash inside a running container
-bash run.sh test  [svc]  # run tests inside the container
-bash run.sh down         # stop everything
-bash run.sh help         # full command reference
+bash run.sh up [stack...]         # start stacks in the background (default: both)
+bash run.sh foreground <stack>    # start one stack attached; Ctrl+C stops it
+bash run.sh down [stack...]       # stop + remove stacks (default: both)
+bash run.sh ps                    # show containers per stack
+bash run.sh logs [stack]          # tail logs (all stacks multiplexed, or one stack)
+bash run.sh shell <stack> [svc]   # bash inside a running container (default svc: backend)
+bash run.sh test  <stack> [svc]   # run test suite inside the container
+bash run.sh help                  # full command reference
 ```
 
-Each container's startup command installs deps, prints a ready banner, then idles on `tail -f /dev/null` — so the container stays alive and you start the dev server / tests yourself. Dep-install output is visible right in the terminal running `run.sh`; no hidden VS Code popups.
+Each container's startup command installs deps, prints a ready banner, then idles — so the container stays alive and you start the dev server / tests yourself. Dep-install output is visible right in the terminal running `run.sh`; no hidden VS Code popups.
 
 **Editing in a container:** start containers with `run.sh`, then in VS Code: `Ctrl+Shift+P` → **"Dev Containers: Attach to Running Container"** → pick the container. No lifecycle magic — you're just attaching an editor to what compose already started.
 
-(There are also per-service `.devcontainer/devcontainer.json` files, but the recommended flow is explicit `run.sh` + Attach to Running Container. "Reopen in Container" still works if you prefer it.)
-
 **Running the built prod images instead of bind-mounted dev:**
 
+Drop the dev override — `run.sh` layers both `docker-compose.yml` + `docker-compose.dev.yml`; invoking compose without the dev override picks the prod Dockerfile:
+
 ```bash
-docker compose --profile full up --build   # mongo + warehouse + store, prod Dockerfiles
-docker compose --profile full down
+docker compose -p duckstore-warehouse --env-file .env.warehouse -f docker-compose.yml up -d --build
+docker compose -p duckstore-store     --env-file .env.store     -f docker-compose.yml up -d --build
 ```
 
 ## Project layout
 
 | Path                | Stack                       | Holds                                                        |
 | ------------------- | --------------------------- | ------------------------------------------------------------ |
-| `warehouse-service/`| Node + Express + MongoDB    | duck CRUD + `/lookup` (internal to store), `ServiceContainer`, Mongo layer in `src/db/`. |
-| `store-service/`    | Go                          | `/api/orders` — `OrderService` orchestrates `PackagingService` (Strategy + Decorator) and `PricingService` (Chain). |
-| `frontend/`         | React + Vite + TypeScript   | Warehouse UI: `DuckTable`/`DuckForm`, singleton `services.duck`, active-record `Duck` model, bilingual i18n. |
-| `shared/enums.json` | —                           | single source of truth for color/size, loaded by every service. |
+| `backend/`          | Node + Express + MongoDB    | schema-driven inventory service + order pipeline (packaging + pricing). Same image deployed twice — once as the warehouse instance, once as the store instance. |
+| `backend/src/schemas/` | JSON                     | entity-type definitions. `duck.json` is today's only schema; each schema instantiates a full CRUD surface at `/api/{plural}`. |
+| `frontend/`         | React + Vite + TypeScript   | Single-page inventory UI, typed `ServiceContainer`, active-record `Duck` model, bilingual i18n. Per-stack branding via `VITE_TITLE`. |
+| `shared/enums.json` | JSON                        | single source of truth for color/size enums; schemas reference entries by name. |
 | `docs/`             | markdown                    | `plan.md`, `assumptions.md`.                                 |
 | `backlog/`          | markdown                    | per-severity tickets (active + completed).                   |
 | `.claude/`          | config                      | agents, skills, audit standards.                             |
@@ -83,8 +81,8 @@ docker compose --profile full down
 ## Scripts
 
 - `setup.sh` — verifies tools against [`.tool-versions`](.tool-versions), auto-installs via winget/brew if missing, installs all per-service deps. Idempotent.
-- `run.sh` — starts Mongo via docker compose, then each service's dev mode in parallel.
-- `update.sh` — reports installed-vs-required for system tools, offers to upgrade (winget/brew), and reports outdated npm/Go deps per service.
+- `run.sh` — orchestrates one compose project per stack (`duckstore-warehouse`, `duckstore-store`). Each stack is an independent `{mongo, backend, frontend}` trio. See `bash run.sh help`.
+- `update.sh` — reports installed-vs-required for system tools, offers to upgrade (winget/brew), and reports outdated npm deps per service.
 
 Windows users can double-click `setup.bat` / `run.bat` / `update.bat` as equivalents.
 
@@ -98,7 +96,7 @@ To bump a version:
 3. Restart your terminal so the new versions are on PATH.
 4. Commit `.tool-versions` so collaborators get the same floor.
 
-Per-service dependencies (`package.json` / `go.mod`) are managed by their own tools — `update.sh` reports outdated ones but does not auto-update, so you can review breaking changes before committing.
+Per-service dependencies (`package.json`) are managed by their own tools — `update.sh` reports outdated ones but does not auto-update, so you can review breaking changes before committing.
 
 ## Development workflow
 
