@@ -1,40 +1,47 @@
+# One stack definition, instantiated twice via separate compose projects
+# (run.sh handles the two invocations). Each stack is self-contained:
+# mongo + backend + frontend, its own network, its own volume. There's no
+# cross-stack talk — a "store" instance only knows about its own ducks,
+# served by its own backend, rendered by its own frontend.
+#
+# Per-stack parameterization is in .env.warehouse and .env.store; run.sh
+# passes --env-file when invoking compose.
+
 services:
   mongo:
     image: mongo:7
-    container_name: duckstore-mongo
-    ports:
-      - "${MONGO_HOST_PORT:-27017}:27017"
     volumes:
       - mongo-data:/data/db
     restart: unless-stopped
 
-  warehouse:
-    profiles: ["full"]
-    build: ./warehouse-service
-    container_name: duckstore-warehouse
+  backend:
+    build:
+      context: .                 # repo root so the Dockerfile can reach shared/
+      dockerfile: backend/Dockerfile
     ports:
-      - "${WAREHOUSE_HOST_PORT:-4001}:4001"
+      - "${BACKEND_HOST_PORT}:4001"
     environment:
       PORT: "4001"
+      INSTANCE: "${INSTANCE_NAME}"
+      SCHEMA_PATH: "./src/schemas/duck.json"
       MONGO_URL: "mongodb://mongo:27017"
-      MONGO_DB: "${MONGO_DB:-duckstore}"
+      MONGO_DB: "${MONGO_DB_NAME}"
       NODE_ENV: "${NODE_ENV:-production}"
     depends_on:
       - mongo
     restart: unless-stopped
 
-  store:
-    profiles: ["full"]
-    build: ./store-service
-    container_name: duckstore-store
+  frontend:
+    build:
+      context: ./frontend
     ports:
-      - "${STORE_HOST_PORT:-4002}:4002"
+      - "${FRONTEND_HOST_PORT}:5173"
     environment:
-      PORT: "4002"
-      WAREHOUSE_URL: "http://warehouse:4001"
+      VITE_INSTANCE: "${INSTANCE_NAME}"
+      VITE_TITLE: "${FRONTEND_TITLE}"
+      NODE_ENV: "${NODE_ENV:-production}"
     depends_on:
-      - warehouse
-    restart: unless-stopped
+      - backend
 
 volumes:
   mongo-data:

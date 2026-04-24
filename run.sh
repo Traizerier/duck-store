@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# Duck Store — orchestrate the dev stack via docker compose.
+# Duck Store — orchestrate the dev stacks via docker compose.
 #
-# Lifecycle is owned by this script (not VS Code). Typical flow:
-#   1. bash run.sh            # starts containers in the background, returns
-#   2. View logs in Docker Desktop, or: bash run.sh logs [svc]
-#   3. In VS Code, "Dev Containers: Attach to Running Container" → pick the
-#      container you want to edit in.
-#   4. Run tests / dev server from inside that container or via:
-#        docker compose exec warehouse npm run dev
-#        docker compose exec warehouse npm run test:run
+# Each "stack" (warehouse, store) is a separate compose project with its
+# own {mongo, backend, frontend} trio — own network, own volume, own
+# lifecycle. No cross-stack HTTP / DNS.
+#
+# Same docker-compose.yml template, parameterized per stack via
+# .env.<stack>. run.sh invokes compose once per stack.
+#
+# Typical flow:
+#   bash run.sh up                  # both stacks up in the background
+#   bash run.sh up warehouse        # just the warehouse stack
+#   bash run.sh logs store          # tail logs for the store stack
+#   bash run.sh test warehouse      # run backend tests in the warehouse stack
+#   bash run.sh down                # stop + remove everything
 #
 # Requires bash. On Windows, use Git Bash or WSL.
 
@@ -28,123 +33,191 @@ ok()   { printf "%s✓%s %s\n" "$GREEN" "$NC" "$*"; }
 warn() { printf "%s!%s %s\n" "$YELLOW" "$NC" "$*"; }
 err()  { printf "%s✗%s %s\n" "$RED" "$NC" "$*" >&2; }
 
-# ---------- docker compose wrapper ----------
-# Always combines base + dev overrides AND pins the project name so that every
-# compose invocation (up / ps / exec / down) targets the same project. Without
-# -p, residue env vars like COMPOSE_PROJECT_NAME from tools like VS Code Dev
-# Containers can override the default and make `up` and `ps` disagree about
-# which containers they're looking at.
-COMPOSE_PROJECT=duckstore
-dc() {
-    docker compose -p "$COMPOSE_PROJECT" -f docker-compose.yml -f docker-compose.dev.yml "$@"
+# ---------- stacks ----------
+# Each stack = a compose project name + a matching .env file. Add a new
+# stack by dropping in `.env.<name>` and adding the name here.
+STACKS=(warehouse store)
+
+project_for()  { echo "duckstore-$1"; }
+env_file_for() { echo ".env.$1"; }
+
+# Invoke compose against a given stack, forwarding remaining args.
+dc_for() {
+    local stack=$1; shift
+    local env_file
+    env_file=$(env_file_for "$stack")
+    if [ ! -f "$env_file" ]; then
+        err "Missing $env_file (expected for stack '$stack'). Known stacks: ${STACKS[*]}"
+        return 1
+    fi
+    docker compose \
+        -p "$(project_for "$stack")" \
+        --env-file "$env_file" \
+        -f docker-compose.yml \
+        -f docker-compose.dev.yml \
+        "$@"
 }
 
-DEV_SERVICES=(mongo warehouse store frontend)
-
-ensure_env() {
-    if [ ! -f .env ] && [ -f .env.example ]; then
-        cp .env.example .env
-        ok "seeded root .env from .env.example"
+# resolve_stacks(args...) — if any args match a known stack name, use
+# those; otherwise default to all stacks.
+resolve_stacks() {
+    if [ $# -eq 0 ]; then
+        printf '%s\n' "${STACKS[@]}"
+        return
+    fi
+    local any_known=0
+    for arg in "$@"; do
+        for known in "${STACKS[@]}"; do
+            if [ "$arg" = "$known" ]; then
+                echo "$arg"
+                any_known=1
+                break
+            fi
+        done
+    done
+    if [ $any_known -eq 0 ]; then
+        err "No known stack in args: $*. Known stacks: ${STACKS[*]}"
+        return 1
     fi
 }
 
 cmd=${1:-up}
+shift 2>/dev/null || true
 
 case "$cmd" in
     up)
-        ensure_env
-        info "docker compose up -d ${DEV_SERVICES[*]}"
-        dc up -d "${DEV_SERVICES[@]}"
+        readarray -t targets < <(resolve_stacks "$@") || exit 1
+        for stack in "${targets[@]}"; do
+            info "Bringing up stack: $stack"
+            dc_for "$stack" up -d --remove-orphans
+        done
         echo
-        dc ps
+        info "All up. Running containers:"
+        docker ps --filter "label=com.docker.compose.project" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
         echo
-        info "Started. Logs are in Docker Desktop, or tail them here:"
-        echo "  bash run.sh logs [svc]     # tail logs (all or one service)"
-        echo "  bash run.sh shell [svc]    # bash inside a container"
-        echo "  bash run.sh test  [svc]    # run tests inside a container"
-        echo "  bash run.sh down           # stop everything"
+        echo "  bash run.sh logs <stack>       # tail logs for a stack"
+        echo "  bash run.sh shell <stack>      # open bash in that stack's backend container"
+        echo "  bash run.sh test  <stack>      # run backend tests in that stack"
+        echo "  bash run.sh down               # stop everything"
         ;;
 
     foreground|up-f)
-        ensure_env
-        info "docker compose up ${DEV_SERVICES[*]} (foreground — Ctrl+C stops everything)"
-        echo
-        dc up "${DEV_SERVICES[@]}"
+        # Foreground mode only makes sense for a single stack — Ctrl+C
+        # has to stream from one. Require an explicit stack arg.
+        if [ $# -ne 1 ]; then
+            err "foreground requires a single stack arg: bash run.sh foreground <stack>"
+            exit 1
+        fi
+        info "Foreground: $1 (Ctrl+C stops this stack)"
+        dc_for "$1" up --remove-orphans
         ;;
 
-    down)
-        info "docker compose down"
-        dc down
+    down|stop)
+        readarray -t targets < <(resolve_stacks "$@") || exit 1
+        for stack in "${targets[@]}"; do
+            info "Tearing down stack: $stack"
+            dc_for "$stack" down --remove-orphans
+        done
         ;;
 
     logs)
-        shift || true
-        dc logs -f --tail=200 "$@"
+        # Default to all stacks if no arg; one stack if arg given.
+        if [ $# -eq 0 ]; then
+            # multiplex: show logs from every stack, prefixed by stack name
+            for stack in "${STACKS[@]}"; do
+                dc_for "$stack" logs -f --tail=50 &
+            done
+            wait
+        else
+            dc_for "$1" logs -f --tail=200
+        fi
         ;;
 
     ps|status)
-        dc ps
+        for stack in "${STACKS[@]}"; do
+            info "Stack: $stack"
+            dc_for "$stack" ps
+            echo
+        done
         ;;
 
     build|rebuild)
-        info "docker compose build ${DEV_SERVICES[*]}"
-        dc build "${DEV_SERVICES[@]}"
+        readarray -t targets < <(resolve_stacks "$@") || exit 1
+        for stack in "${targets[@]}"; do
+            info "Building stack: $stack"
+            dc_for "$stack" build
+        done
         ;;
 
     restart)
-        svc=${2:-frontend}
-        info "Restarting $svc (bounces the container — keeps volumes)..."
-        dc restart "$svc"
+        if [ $# -lt 1 ]; then
+            err "restart requires a stack arg: bash run.sh restart <stack> [service]"
+            exit 1
+        fi
+        stack=$1; shift
+        # Default service = frontend (HMR misses are the common restart case).
+        svc=${1:-frontend}
+        info "Restarting $stack/$svc"
+        dc_for "$stack" restart "$svc"
         ;;
 
     shell|exec)
-        svc=${2:-warehouse}
-        info "docker compose exec $svc bash"
-        dc exec "$svc" bash
+        stack=${1:-warehouse}
+        svc=${2:-backend}
+        info "docker compose exec ($stack) $svc bash"
+        dc_for "$stack" exec "$svc" bash
         ;;
 
     test)
-        svc=${2:-warehouse}
+        stack=${1:-warehouse}
+        svc=${2:-backend}
         case "$svc" in
-            store|store-service)
-                info "docker compose exec store go test ./..."
-                dc exec store go test ./...
-                ;;
             frontend)
-                info "docker compose exec frontend npm run test:run"
-                dc exec frontend npm run test:run
+                info "($stack) frontend tests"
+                dc_for "$stack" exec frontend npm run test:run
                 ;;
             *)
-                info "docker compose exec $svc npm run test:run"
-                dc exec "$svc" npm run test:run
+                info "($stack) backend tests"
+                dc_for "$stack" exec backend npm run test:run
                 ;;
         esac
         ;;
 
+    stacks)
+        printf '%s\n' "${STACKS[@]}"
+        ;;
+
     help|--help|-h)
         cat <<USAGE
-${BOLD}bash run.sh [command]${NC}
+${BOLD}bash run.sh [command] [stack...]${NC}
 
-Lifecycle:
-  up            Start services in the background (default). View logs in
-                  Docker Desktop or with \`bash run.sh logs\`.
-  foreground    Start in the foreground, streaming logs. Ctrl+C stops.
-                  Alias: up-f
-  down          Stop and remove all containers.
-  rebuild       Rebuild images (after Dockerfile changes).
-  restart [svc] Bounce one service's container (default: frontend). Useful
-                  when Vite HMR misses a big refactor and a browser reload
-                  doesn't help. Keeps volumes intact.
+Each stack is a self-contained {mongo, backend, frontend} trio. Stacks
+are fully independent — no cross-stack data or network. Known stacks:
+${BOLD}${STACKS[*]}${NC}
 
-Inspection:
-  ps            Show running services.
-  logs [svc]    Tail logs (all or one service).
+${BOLD}Lifecycle:${NC}
+  up [stack...]         Start one or more stacks in the background
+                        (default: all). Example: ${BOLD}bash run.sh up warehouse${NC}
+  foreground <stack>    Start one stack in the foreground. Ctrl+C stops
+                        it. Requires the stack name. Alias: up-f
+  down [stack...]       Stop + remove one or more stacks (default: all)
+                        Alias: stop
+  rebuild [stack...]    Rebuild images (after Dockerfile changes).
+  restart <stack> [svc] Bounce one service in a stack (default: frontend).
 
-Work inside containers:
-  shell [svc]   Open a bash shell in a running container (default: warehouse).
-  test  [svc]   Run the test suite inside the container (default: warehouse).
+${BOLD}Inspection:${NC}
+  ps                    Show containers per stack.
+  logs [stack]          Tail logs (all stacks multiplexed, or one stack).
+  stacks                List known stack names.
 
-Currently orchestrated services: ${DEV_SERVICES[*]}
+${BOLD}Work inside containers:${NC}
+  shell <stack> [svc]   Open a bash shell (default svc: backend).
+  test  <stack> [svc]   Run the test suite (default svc: backend).
+
+${BOLD}Add a third stack:${NC}
+  1. Drop in ${BOLD}.env.<name>${NC} with INSTANCE_NAME, FRONTEND_TITLE, host ports, MONGO_DB_NAME.
+  2. Add "<name>" to the STACKS array near the top of this script.
+  3. ${BOLD}bash run.sh up <name>${NC}
 USAGE
         ;;
 

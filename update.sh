@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Duck Store — check for tool & dependency updates.
 #
-# System tools (node, go, docker): installed vs .tool-versions vs available.
+# System tools (node, docker): installed vs .tool-versions vs available.
 #   Offers to upgrade via winget (Windows) or brew (mac).
 #   Offers to bump .tool-versions after an upgrade.
 #
-# Service deps (npm, go modules): reports outdated. Does NOT auto-upgrade —
-#   run `cd <service> && npm update` / `go get -u ./... && go mod tidy` manually
-#   after reviewing, so you can catch breaking changes.
+# Service deps (npm): reports outdated. Does NOT auto-upgrade —
+#   run `cd <service> && npm update` manually after reviewing, so you can
+#   catch breaking changes.
 
 set -uo pipefail
 
@@ -80,13 +80,11 @@ if $can_upgrade; then
             windows)
                 info "Running: winget upgrade"
                 winget upgrade --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements 2>/dev/null || true
-                winget upgrade --id GoLang.Go         --accept-source-agreements --accept-package-agreements 2>/dev/null || true
                 winget upgrade --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements 2>/dev/null || true
                 ;;
             mac)
                 info "Running: brew upgrade"
                 brew upgrade "node@${required[node]%%.*}" 2>/dev/null || true
-                brew upgrade go 2>/dev/null || true
                 brew upgrade --cask docker 2>/dev/null || true
                 ;;
         esac
@@ -120,23 +118,12 @@ check_npm_outdated() {
     (cd "$dir" && npm outdated || true) | sed 's/^/    /'
 }
 
-check_go_outdated() {
-    local dir=$1
-    [ -d "$dir" ] && [ -f "$dir/go.mod" ] || return 0
-    command -v go >/dev/null 2>&1 || return 0
-    echo
-    dim "  $dir (go list -m -u):"
-    (cd "$dir" && go list -m -u all 2>/dev/null | grep -E '\[.*\]' || echo "    (all modules up to date)") | sed 's/^/    /'
-}
-
-for service in warehouse-service store-service frontend; do
+for service in backend frontend; do
     check_npm_outdated "$service"
-    check_go_outdated "$service"
 done
 
 echo
 info "Service deps are reported only. To update, run manually in each service:"
-echo "  Node:  cd <service> && npm update     (or 'npm install <pkg>@latest' for specific bumps)"
-echo "  Go:    cd <service> && go get -u ./... && go mod tidy"
+echo "  cd <service> && npm update     (or 'npm install <pkg>@latest' for specific bumps)"
 echo
 ok "Update check complete."

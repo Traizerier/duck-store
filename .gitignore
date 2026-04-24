@@ -24,21 +24,13 @@ npm-debug.log*
 .env.*.local
 
 # ============================================================
-# Node — warehouse-service, frontend
+# Node — backend, frontend
 # ============================================================
 node_modules/
 dist/
 build/
 coverage/
 .vite/
-
-# ============================================================
-# Go — store-service
-# ============================================================
-*.exe
-*.dll
-*.so
-*.dylib
 *.test
 *.out
 coverage.out

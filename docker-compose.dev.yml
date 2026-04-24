@@ -1,61 +1,39 @@
-# Development overrides — layered on top of docker-compose.yml.
-# Used by run.sh (the canonical dev entry point) and optionally by
-# VS Code devcontainers (which is only used for editor attach now).
+# Dev overrides — layered on top of docker-compose.yml via run.sh.
 #
-# Container commands install deps and then sleep — the container stays
-# alive so you can attach / exec / run `npm test` or `npm run dev` yourself.
-# Output of `npm install` is visible via `bash run.sh` foreground or
-# `bash run.sh logs warehouse`.
+# Each stack (warehouse, store) applies this override on top of the base
+# compose. Bind-mounts the repo into each container so edits are live;
+# runs npm install + dev server instead of the prod CMD. A named volume
+# per compose project keeps the two stacks' node_modules separate.
 
 services:
-  warehouse:
+  backend:
     volumes:
       - ./:/workspace:cached
-      - warehouse-node-modules:/workspace/warehouse-service/node_modules
-    working_dir: /workspace/warehouse-service
+      - backend-node-modules:/workspace/backend/node_modules
+    working_dir: /workspace/backend
     command: >
       sh -c "
-        [ -f .env ] || cp .env.example .env;
         npm install;
         npm run dev
       "
     environment:
-      NODE_ENV: "${NODE_ENV:-development}"
-
-  store:
-    build:
-      context: ./store-service
-      target: base
-    volumes:
-      - ./:/workspace:cached
-      - go-mod-cache:/go/pkg/mod
-    working_dir: /workspace/store-service
-    command: >
-      sh -c "
-        [ -f .env ] || cp .env.example .env;
-        go mod download;
-        go run ./cmd/server
-      "
+      NODE_ENV: "development"
 
   frontend:
-    build:
-      context: ./frontend
     volumes:
       - ./:/workspace:cached
       - frontend-node-modules:/workspace/frontend/node_modules
     working_dir: /workspace/frontend
     command: >
       sh -c "
-        [ -f .env ] || cp .env.example .env;
         npm install;
         npm run dev
       "
-    ports:
-      - "${FRONTEND_HOST_PORT:-5173}:5173"
     environment:
-      NODE_ENV: "${NODE_ENV:-development}"
+      NODE_ENV: "development"
+      # VITE_TITLE / VITE_INSTANCE are already set by the base compose
+      # from the --env-file; they flow through to Vite's client-side env.
 
 volumes:
-  warehouse-node-modules:
-  go-mod-cache:
+  backend-node-modules:
   frontend-node-modules:

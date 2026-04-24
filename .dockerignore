@@ -1,0 +1,46 @@
+# Keep the build context lean. The backend Dockerfile only COPYs
+# backend/package*.json, backend/src/, and shared/enums.json, so we
+# can safely exclude everything else from the context.
+
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.vite
+**/.vitest-cache
+**/.cache
+
+# VCS + editor
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# docs + tooling — not needed at image-build time
+backlog
+docs
+.claude
+*.md
+!backend/README.md
+
+# frontend isn't part of the backend image
+frontend
+
+# dev-only configs
+docker-compose.yml
+docker-compose.dev.yml
+setup.sh
+run.sh
+update.sh
+*.bat
+.env
+.env.*
+.tool-versions
+
+# backend's own test files — prod image doesn't need them
+**/*.test.js
+**/*.test.ts

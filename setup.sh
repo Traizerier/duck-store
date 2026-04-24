@@ -3,10 +3,11 @@
 # Requires bash. On Windows, use Git Bash or WSL.
 #
 # Docker is the only hard requirement: the dev stack runs in containers
-# (warehouse + store + frontend each with their own image). Node and Go
-# are optional host-side conveniences for running scripts / tests / the
-# VS Code extensions outside the containers. If they're absent, the
-# script skips their setup steps rather than failing.
+# (the Node backend is deployed twice — warehouse + store — and the
+# frontend runs in its own image). Node is an optional host-side
+# convenience for running scripts / tests / VS Code extensions outside
+# the containers; if absent, the script skips those setup steps rather
+# than failing.
 #
 # Reads required versions from .tool-versions as a minimum floor —
 # anything at or above the listed version is accepted.
@@ -56,7 +57,6 @@ done < .tool-versions
 
 require_node="${required[node]:-20}"
 require_node_major="${require_node%%.*}"
-require_go="${required[go]:-1.22}"     # treat as major.minor
 require_docker="${required[docker]:-2}"
 
 # ---------- check buckets ----------
@@ -96,7 +96,7 @@ with_timeout() {
 }
 
 # ---------- version checks ----------
-# Docker is the only required tool; node/go are optional conveniences
+# Docker is the only required tool; node is an optional convenience
 # for running things on the host rather than inside the containers.
 check_node() {
     if ! command -v node >/dev/null 2>&1; then
@@ -127,23 +127,6 @@ check_npm() {
         return
     fi
     ok "npm: $(npm --version)"
-}
-
-check_go() {
-    if ! command -v go >/dev/null 2>&1; then
-        missing_optional+=("go")
-        tool_note[go]="not installed (optional; containers ship their own go)"
-        return
-    fi
-    local v mm
-    v=$(go version | awk '{print $3}' | sed 's/^go//')
-    mm=$(echo "$v" | awk -F. '{print $1"."$2}')
-    if version_ge "$mm" "$require_go"; then
-        ok "go:  go$v (meets minimum go${require_go})"
-    else
-        wrong_version+=("go")
-        tool_note[go]="installed go$v, below minimum go${require_go}"
-    fi
 }
 
 check_docker() {
@@ -183,14 +166,12 @@ check_docker() {
 info "Checking prerequisites (from .tool-versions)..."
 check_node
 check_npm
-check_go
 check_docker
 
 # ---------- vendor URLs (version pickers) ----------
 vendor_url() {
     case "$1" in
         node)   echo "https://nodejs.org/dist/latest-v${require_node_major}.x/";;
-        go)     echo "https://go.dev/dl/";;
         docker) echo "https://www.docker.com/products/docker-desktop/";;
     esac
 }
@@ -233,18 +214,6 @@ run_install_pinned() {
                     winget install --id OpenJS.NodeJS --version "$v" \
                         --accept-source-agreements --accept-package-agreements
                     ;;
-                go)
-                    local v
-                    v=$(winget_latest_matching "GoLang.Go" "$require_go")
-                    if [ -z "$v" ]; then
-                        warn "winget has no Go ${require_go}.x listed — falling back to vendor page."
-                        open_url "$(vendor_url go)"
-                        return 1
-                    fi
-                    info "Installing Go $v via winget..."
-                    winget install --id GoLang.Go --version "$v" \
-                        --accept-source-agreements --accept-package-agreements
-                    ;;
                 docker)
                     winget install --id Docker.DockerDesktop \
                         --accept-source-agreements --accept-package-agreements
@@ -261,20 +230,6 @@ run_install_pinned() {
                     fi
                     info "Installing $formula via brew..."
                     brew install "$formula"
-                    ;;
-                go)
-                    local formula="go@${require_go}"
-                    if brew info "$formula" >/dev/null 2>&1; then
-                        info "Installing $formula via brew..."
-                        brew install "$formula"
-                    elif brew info go >/dev/null 2>&1; then
-                        warn "brew has no ${formula} — installing 'go' (latest) as best effort."
-                        brew install go
-                    else
-                        warn "brew has no go formula — falling back to vendor page."
-                        open_url "$(vendor_url go)"
-                        return 1
-                    fi
                     ;;
                 docker)
                     if ! brew info --cask docker >/dev/null 2>&1; then
@@ -299,13 +254,11 @@ install_hint() {
         windows)
             case "$tool" in
                 node)   echo "winget install --id OpenJS.NodeJS (v${require_node_major}+)   or   $(vendor_url node)";;
-                go)     echo "winget install --id GoLang.Go (go${require_go}+)   or   $(vendor_url go)";;
                 docker) echo "winget install --id Docker.DockerDesktop   or   $(vendor_url docker)";;
             esac;;
         mac)
             case "$tool" in
                 node)   echo "brew install node@${require_node_major} (or newer)   or   $(vendor_url node)";;
-                go)     echo "brew install go@${require_go} (or newer)   or   $(vendor_url go)";;
                 docker) echo "brew install --cask docker   or   $(vendor_url docker)";;
             esac;;
         *)
@@ -424,15 +377,6 @@ install_service() {
         fi
     fi
 
-    if [ -f "$dir/go.mod" ]; then
-        if command -v go >/dev/null 2>&1; then
-            info "Downloading Go modules in $dir/"
-            (cd "$dir" && go mod download) && ok "$dir Go modules downloaded" || err "$dir go mod download failed"
-        else
-            warn "Skipping $dir (go not installed)"
-        fi
-    fi
-
     if [ -f "$dir/.env.example" ] && [ ! -f "$dir/.env" ]; then
         cp "$dir/.env.example" "$dir/.env"
         ok "$dir/.env created from .env.example"
@@ -448,7 +392,7 @@ if [ -f ".env.example" ] && [ ! -f ".env" ]; then
     ok "root .env created from .env.example"
 fi
 
-for service in warehouse-service store-service frontend; do
+for service in backend frontend; do
     install_service "$service"
 done
 
