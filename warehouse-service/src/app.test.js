@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import supertest from "supertest";
 import { MongoClient } from "mongodb";
 import { createDuckRepo } from "./repos/duckRepo.js";
-import { createDuckService } from "./services/duckService.js";
+import { DuckService } from "./services/duckService.js";
+import { ServiceContainer } from "./container.js";
 import { createApp } from "./app.js";
 import { createCounters } from "./db/mongo.js";
 
@@ -22,8 +23,9 @@ beforeAll(async () => {
   client = await MongoClient.connect(uri);
   db = client.db("duckstore_test_routes");
   const repo = createDuckRepo(db, createCounters(db));
-  const service = createDuckService(repo);
-  const app = createApp(service);
+  const container = new ServiceContainer();
+  container.register("duck", new DuckService(repo));
+  const app = createApp(container);
   request = supertest(app);
 });
 

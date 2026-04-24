@@ -8,16 +8,22 @@ function isValidQuantity(v) {
   return Number.isInteger(v) && v >= 0;
 }
 
-export function validateDuckInput(input) {
-  const data = input ?? {};
-  const errors = {};
-
+// Mutates `errors` in place so both POST-body and lookup-query validators
+// can share one source of truth for "what's a valid color/size?".
+function checkColorAndSize(data, errors) {
   if (!COLORS.includes(data.color)) {
     errors.color = `must be one of: ${COLORS.join(", ")}`;
   }
   if (!SIZES.includes(data.size)) {
     errors.size = `must be one of: ${SIZES.join(", ")}`;
   }
+}
+
+export function validateDuckInput(input) {
+  const data = input ?? {};
+  const errors = {};
+
+  checkColorAndSize(data, errors);
   if (!isValidPrice(data.price)) {
     errors.price = "must be a positive number";
   }
@@ -38,12 +44,7 @@ export function validateLookupQuery(query) {
   const data = query ?? {};
   const errors = {};
 
-  if (!COLORS.includes(data.color)) {
-    errors.color = `must be one of: ${COLORS.join(", ")}`;
-  }
-  if (!SIZES.includes(data.size)) {
-    errors.size = `must be one of: ${SIZES.join(", ")}`;
-  }
+  checkColorAndSize(data, errors);
 
   return {
     valid: Object.keys(errors).length === 0,

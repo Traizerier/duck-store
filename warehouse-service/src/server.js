@@ -1,6 +1,7 @@
 import { connectDb, createDucksIndex, createCounters } from "./db/mongo.js";
 import { createDuckRepo } from "./repos/duckRepo.js";
-import { createDuckService } from "./services/duckService.js";
+import { DuckService } from "./services/duckService.js";
+import { ServiceContainer } from "./container.js";
 import { createApp } from "./app.js";
 
 const MONGO_URL = process.env.MONGO_URL || "mongodb://localhost:27017";
@@ -11,9 +12,14 @@ const { client, db } = await connectDb(MONGO_URL, MONGO_DB);
 await createDucksIndex(db);
 
 const counters = createCounters(db);
-const repo = createDuckRepo(db, counters);
-const service = createDuckService(repo);
-const app = createApp(service);
+const duckRepo = createDuckRepo(db, counters);
+
+// Build the service container. Future services (order, ...) register here
+// and become reachable via container.get(name).
+const container = new ServiceContainer();
+container.register("duck", new DuckService(duckRepo));
+
+const app = createApp(container);
 
 const server = app.listen(PORT, () => {
   console.log(`warehouse-service listening on :${PORT} (db: ${MONGO_DB})`);

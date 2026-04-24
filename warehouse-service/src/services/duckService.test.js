@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createDuckService } from "./duckService.js";
+import { DuckService } from "./duckService.js";
 import { ValidationError, NotFoundError } from "../errors.js";
 
 function createFakeRepo() {
@@ -19,19 +19,22 @@ function createFakeRepo() {
       ducks.push(saved);
       return saved;
     }),
+    // Mutations filter deleted:false to mirror the real repo (item 007):
+    // a tombstoned row doesn't match, and the service sees null → NotFound.
     update: vi.fn(async (id, fields) => {
-      const duck = ducks.find((d) => d.id === id);
+      const duck = ducks.find((d) => d.id === id && !d.deleted);
       if (!duck) return null;
       Object.assign(duck, fields);
       return { ...duck };
     }),
     incrementQuantity: vi.fn(async (id, delta) => {
-      const duck = ducks.find((d) => d.id === id);
+      const duck = ducks.find((d) => d.id === id && !d.deleted);
+      if (!duck) return null;
       duck.quantity += delta;
       return { ...duck };
     }),
     softDelete: vi.fn(async (id) => {
-      const duck = ducks.find((d) => d.id === id);
+      const duck = ducks.find((d) => d.id === id && !d.deleted);
       if (!duck) return null;
       duck.deleted = true;
       return { ...duck };
@@ -61,7 +64,7 @@ describe("DuckService.create", () => {
 
   beforeEach(() => {
     repo = createFakeRepo();
-    service = createDuckService(repo);
+    service = new DuckService(repo);
   });
 
   describe("with no existing match", () => {
@@ -174,7 +177,7 @@ describe("DuckService.update", () => {
 
   beforeEach(() => {
     repo = createFakeRepo();
-    service = createDuckService(repo);
+    service = new DuckService(repo);
     repo.seed({
       id: 42,
       color: "Red",
@@ -264,6 +267,17 @@ describe("DuckService.update", () => {
         NotFoundError,
       );
     });
+
+    // TOCTOU regression guard: even if the row existed at some earlier read,
+    // a null return from the mutation is the authoritative "no match" signal
+    // and must surface as NotFoundError, not a null response.
+    it("should throw NotFoundError when repo.update returns null", async () => {
+      const stubRepo = { update: vi.fn(async () => null) };
+      const stubService = new DuckService(stubRepo);
+      await expect(stubService.update(123, { price: 15 })).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
   });
 });
 
@@ -273,7 +287,7 @@ describe("DuckService.delete", () => {
 
   beforeEach(() => {
     repo = createFakeRepo();
-    service = createDuckService(repo);
+    service = new DuckService(repo);
   });
 
   it("should logically delete an existing duck", async () => {
@@ -312,7 +326,7 @@ describe("DuckService.findByColorAndSize", () => {
 
   beforeEach(() => {
     repo = createFakeRepo();
-    service = createDuckService(repo);
+    service = new DuckService(repo);
   });
 
   it("should return the active duck matching color and size", async () => {
@@ -335,7 +349,7 @@ describe("DuckService.list", () => {
 
   beforeEach(() => {
     repo = createFakeRepo();
-    service = createDuckService(repo);
+    service = new DuckService(repo);
   });
 
   it("should return only non-deleted ducks", async () => {
