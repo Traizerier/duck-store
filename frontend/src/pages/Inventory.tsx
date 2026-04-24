@@ -5,12 +5,18 @@ import { DuckTable } from "../components/DuckTable";
 import { DuckForm, type DuckFormValues } from "../components/DuckForm";
 import { useTranslation } from "../i18n/locale";
 
+// The page title comes from the stack's VITE_TITLE env var (set by
+// docker-compose's per-stack --env-file). That's how a "warehouse"
+// instance shows "Duck Warehouse" at the top while a "store" instance
+// shows "Duck Store" — same React code, different startup config.
+const PAGE_TITLE = import.meta.env.VITE_TITLE ?? "Duck Inventory";
+
 type FormState =
   | { mode: "closed" }
   | { mode: "add" }
   | { mode: "edit"; duck: Duck };
 
-export function Warehouse() {
+export function Inventory() {
   const { t } = useTranslation();
   const [ducks, setDucks] = useState<Duck[]>([]);
   const [form, setForm] = useState<FormState>({ mode: "closed" });
@@ -18,11 +24,11 @@ export function Warehouse() {
   const [error, setError] = useState<string | null>(null);
 
   // Route thrown errors to a user-facing string. For ApiError we prefer the
-  // canonical envelope's `body.message` (set by both services for 404/500/502)
+  // canonical envelope's `body.message` (set by the backend for 404/500/etc.)
   // so the user sees the server's actual diagnostic instead of a bare status.
   // Fall back to the translated "Request failed (N)" when the server omitted
-  // a message or the body wasn't JSON. Non-ApiError Errors keep their raw
-  // `.message` — that copy comes from the browser runtime, not us.
+  // a message. Non-ApiError Errors keep their raw `.message` — that copy
+  // comes from the browser runtime, not us.
   const describeError = (e: unknown): string => {
     if (e instanceof ApiError) {
       const msg = extractApiMessage(e.body);
@@ -35,7 +41,7 @@ export function Warehouse() {
 
   const refresh = useCallback(async () => {
     try {
-      setDucks(await services.duck.list());
+      setDucks(await services.get("duck").list());
       setError(null);
     } catch (e) {
       setError(describeError(e));
@@ -74,7 +80,7 @@ export function Warehouse() {
   const handleSubmit = async (values: DuckFormValues) => {
     try {
       if (form.mode === "add") {
-        await services.duck.create(values);
+        await services.get("duck").create(values);
       } else if (form.mode === "edit") {
         await form.duck.update({
           price: values.price,
@@ -96,16 +102,16 @@ export function Warehouse() {
   };
 
   return (
-    <div className="warehouse">
-      <header className="warehouse-header">
-        <h1>{t("warehouse.title")}</h1>
+    <div className="inventory">
+      <header className="inventory-header">
+        <h1>{PAGE_TITLE}</h1>
         <button type="button" onClick={openAdd}>
-          {t("warehouse.addButton")}
+          {t("inventory.addButton")}
         </button>
       </header>
 
       {error && (
-        <div role="alert" className="warehouse-error">
+        <div role="alert" className="inventory-error">
           {error}
         </div>
       )}
@@ -125,10 +131,9 @@ export function Warehouse() {
   );
 }
 
-// Pull out the canonical envelope's `message` field when present. Both
-// services emit `{error: TypedCode, message: "..."}` for non-validation
-// errors; this reads it defensively so a server returning {} or a
-// non-object body falls through to the translated generic string.
+// Pull out the canonical envelope's `message` field when present. Reads
+// defensively so a server returning {} or a non-object body falls through
+// to the translated generic string.
 function extractApiMessage(body: unknown): string | null {
   if (
     body &&
@@ -158,4 +163,3 @@ function extractFieldErrors(body: unknown): Record<string, string> | null {
   }
   return null;
 }
-

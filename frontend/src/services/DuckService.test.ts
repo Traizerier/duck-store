@@ -8,7 +8,7 @@ import { Duck } from "../models/Duck";
 function newService(): DuckService {
   // A fresh instance per test — the service is stateless, but constructing
   // one here keeps the test arrange block readable.
-  return new DuckService();
+  return new DuckService("/api/ducks");
 }
 
 describe("DuckService.list", () => {

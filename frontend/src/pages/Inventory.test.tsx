@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/setup";
-import { Warehouse } from "./Warehouse";
+import { Inventory } from "./Inventory";
 
 const duckA = {
   id: 1,
@@ -14,17 +14,17 @@ const duckA = {
   deleted: false,
 };
 
-describe("Warehouse page", () => {
+describe("Inventory page", () => {
   it("should load ducks on mount and display them", async () => {
     server.use(http.get("/api/ducks", () => HttpResponse.json([duckA])));
-    render(<Warehouse />);
+    render(<Inventory />);
     await waitFor(() => expect(screen.getByText("Red")).toBeInTheDocument());
   });
 
   it("should open the add form when the Add Duck button is clicked", async () => {
     server.use(http.get("/api/ducks", () => HttpResponse.json([])));
     const user = userEvent.setup();
-    render(<Warehouse />);
+    render(<Inventory />);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /add duck/i })).toBeInTheDocument(),
     );
@@ -45,7 +45,7 @@ describe("Warehouse page", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<Warehouse />);
+    render(<Inventory />);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /add duck/i })).toBeInTheDocument(),
     );
@@ -65,7 +65,7 @@ describe("Warehouse page", () => {
   it("should open the edit form pre-filled when a row's Edit button is clicked", async () => {
     server.use(http.get("/api/ducks", () => HttpResponse.json([duckA])));
     const user = userEvent.setup();
-    render(<Warehouse />);
+    render(<Inventory />);
     await waitFor(() => expect(screen.getByText("Red")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -86,7 +86,7 @@ describe("Warehouse page", () => {
     );
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
-    render(<Warehouse />);
+    render(<Inventory />);
     await waitFor(() => expect(screen.getByText("Red")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /delete/i }));
@@ -105,7 +105,7 @@ describe("Warehouse page", () => {
       ),
     );
     const user = userEvent.setup();
-    render(<Warehouse />);
+    render(<Inventory />);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /add duck/i })).toBeInTheDocument(),
     );
@@ -133,7 +133,7 @@ describe("Warehouse page", () => {
     );
     vi.spyOn(window, "confirm").mockReturnValue(false);
     const user = userEvent.setup();
-    render(<Warehouse />);
+    render(<Inventory />);
     await waitFor(() => expect(screen.getByText("Red")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /delete/i }));
@@ -151,7 +151,7 @@ describe("Warehouse page", () => {
         ),
       ),
     );
-    render(<Warehouse />);
+    render(<Inventory />);
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("warehouse connection refused"),
     );
@@ -162,7 +162,7 @@ describe("Warehouse page", () => {
     const { LocaleProvider } = await import("../i18n/locale");
     render(
       <LocaleProvider initialLocale="es">
-        <Warehouse />
+        <Inventory />
       </LocaleProvider>,
     );
     await waitFor(() =>

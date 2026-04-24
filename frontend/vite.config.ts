@@ -13,11 +13,13 @@ export default defineConfig({
       allow: [".."],
     },
     proxy: {
-      // Dev-only proxy: browser hits localhost:5173/api/* and Vite forwards
-      // to the warehouse container on the compose network. Keeps the browser
-      // single-origin so we don't need CORS.
+      // Dev-only proxy: browser hits /api/* and Vite forwards to the
+      // backend container on the compose network. Each stack has its
+      // own backend at service name "backend" within its own compose
+      // project, so the same target string works for both stacks.
+      // Keeps the browser single-origin (no CORS).
       "/api": {
-        target: "http://warehouse:4001",
+        target: "http://backend:4001",
         changeOrigin: true,
       },
     },

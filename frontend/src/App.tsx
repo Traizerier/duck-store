@@ -1,13 +1,17 @@
 import { LocaleProvider, useTranslation } from "./i18n/locale";
-import { Warehouse } from "./pages/Warehouse";
+import { Inventory } from "./pages/Inventory";
+
+// Instance label sourced from the stack's VITE_INSTANCE env (set by
+// docker-compose --env-file). Used only as a tiny chip near the locale
+// toggle — the main page title comes from VITE_TITLE in Inventory.tsx.
+const INSTANCE = import.meta.env.VITE_INSTANCE ?? "";
 
 function AppChrome() {
   const { t, locale, setLocale } = useTranslation();
   return (
     <main className="app">
       <nav className="tab-bar">
-        <span className="tab tab-active">{t("tab.warehouse")}</span>
-        <span className="tab tab-disabled">{t("tab.store")}</span>
+        {INSTANCE && <span className="instance-chip">{INSTANCE}</span>}
         <button
           type="button"
           className="locale-toggle"
@@ -16,7 +20,7 @@ function AppChrome() {
           {t("locale.toggle")}
         </button>
       </nav>
-      <Warehouse />
+      <Inventory />
     </main>
   );
 }

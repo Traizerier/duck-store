@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly DEV: boolean;
   readonly PROD: boolean;
   readonly MODE: string;
+  readonly VITE_INSTANCE?: string;
+  readonly VITE_TITLE?: string;
 }
 
 interface ImportMeta {

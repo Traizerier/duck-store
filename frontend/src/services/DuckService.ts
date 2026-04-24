@@ -26,8 +26,8 @@ export type DuckUpdate = Partial<Pick<DuckData, "price" | "quantity">>;
 // that components use; _patch / _delete are package-private helpers the
 // Duck model uses to persist itself.
 export class DuckService extends BaseService {
-  constructor() {
-    super("/api/ducks");
+  constructor(basePath: string) {
+    super(basePath);
   }
 
   async list(): Promise<Duck[]> {

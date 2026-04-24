@@ -9,12 +9,9 @@ export type Locale = "en" | "es";
 // `en`, not missing keys in `es`).
 export const translations = {
   en: {
-    "tab.warehouse": "Warehouse",
-    "tab.store": "Store",
     "locale.toggle": "Español",
 
-    "warehouse.title": "Duck Warehouse",
-    "warehouse.addButton": "Add Duck",
+    "inventory.addButton": "Add Duck",
 
     "col.id": "ID",
     "col.color": "Color",
@@ -61,12 +58,9 @@ export const translations = {
     "error.unknown": "Unknown error",
   },
   es: {
-    "tab.warehouse": "Almacén",
-    "tab.store": "Tienda",
     "locale.toggle": "English",
 
-    "warehouse.title": "Almacén de Patitos",
-    "warehouse.addButton": "Agregar Patito",
+    "inventory.addButton": "Agregar Patito",
 
     "col.id": "ID",
     "col.color": "Color",
