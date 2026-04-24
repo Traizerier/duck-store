@@ -36,6 +36,12 @@ fi
 while IFS=' ' read -r tool version || [ -n "${tool:-}" ]; do
     [[ "$tool" =~ ^#.*$ ]] && continue
     [ -z "${tool:-}" ] && continue
+    # Strip trailing CR so CRLF-line-ending checkouts (Windows git with
+    # core.autocrlf=true) don't smuggle \r into parsed values, which would
+    # (a) make "20" != "20\r" falsely flag a version mismatch, and
+    # (b) corrupt the error output by carriage-returning over itself.
+    tool="${tool%$'\r'}"
+    version="${version%$'\r'}"
     required[$tool]=$version
 done < .tool-versions
 

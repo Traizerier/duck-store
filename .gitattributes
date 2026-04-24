@@ -1,0 +1,16 @@
+# Force LF line endings for all text files regardless of checkout platform.
+# Rationale: setup.sh was tripped by CRLF-ized .tool-versions on Windows
+# (core.autocrlf=true default injects \r into parsed shell values). Rather
+# than maintain per-extension exceptions, normalize everything to LF.
+#
+# On first clone (or after renormalize), the working tree matches the repo
+# byte-for-byte on any OS.
+*   text=auto eol=lf
+
+# Explicit binary declarations so git doesn't try to diff them as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
