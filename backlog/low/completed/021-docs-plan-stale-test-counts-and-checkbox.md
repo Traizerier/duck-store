@@ -1,10 +1,16 @@
-# P016: `docs/plan.md` has stale test counts and stale progress checkboxes
+---
+id: 021
+title: docs/plan.md has stale test counts and stale progress checkboxes
+status: Completed
+severity: low
+service: docs
+promoted_from: P016
+---
 
-**Proposed severity:** Low
+# 021: `docs/plan.md` has stale test counts and stale progress checkboxes
+
 **Found by:** Architecture (documentation drift)
-
-**Status:** Proposed
-**Related to:** 009 (same kind of doc-vs-reality drift; follow-up explicitly deferred in P009's resolution notes)
+**Related to:** 009 (same kind of doc-vs-reality drift; follow-up explicitly deferred in 009's resolution notes)
 
 ## Description
 `docs/plan.md` is STANDARDS.md's "master plan" and should reflect the current state. Two concrete drifts exist:
@@ -36,3 +42,15 @@ Two options, pick one:
 2. **Replace the "Test counts" section with a line that defers to the command** — e.g. "Run `./run.sh test` for current totals; counts drift fast and the plan is not the source of truth." Then delete the numbers. This is what P009's resolution recommended as an alternative.
 
 Either way, checkboxes on lines 130 and 137 should be flipped (`[x]`) or the items removed. Prefer option 2 for the counts so this doesn't come back as a finding on the next audit.
+
+## Resolution
+
+**Completed:** 2026-04-23
+
+Took option 2 for the numbers (deferral to the command) and flipped both stale checkboxes.
+
+**Changes (1 file):**
+
+- `docs/plan.md` — checkboxes on lines 130 and 137 now `[x]`; "Test counts" section renamed to "Tests" and replaced with a one-paragraph description of coverage + a pointer to `bash run.sh test`. No numbers to drift.
+
+**Verification:** Visual diff against current code; no test counts remain in plan.md, so the next audit pass cannot re-fire this finding.

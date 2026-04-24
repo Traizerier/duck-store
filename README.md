@@ -70,13 +70,15 @@ docker compose --profile full down
 
 ## Project layout
 
-| Path                | Stack                       | Status    |
-| ------------------- | --------------------------- | --------- |
-| `warehouse-service/`| Node + Express + MongoDB    | scaffolding |
-| `store-service/`    | Go                          | scaffolding |
-| `frontend/`         | React + Vite + TypeScript   | not started |
-| `docs/`             | plan, conventions, assumptions | —      |
-| `.claude/`          | agent/skill config          | —         |
+| Path                | Stack                       | Holds                                                        |
+| ------------------- | --------------------------- | ------------------------------------------------------------ |
+| `warehouse-service/`| Node + Express + MongoDB    | duck CRUD + `/lookup` (internal to store), `ServiceContainer`, Mongo layer in `src/db/`. |
+| `store-service/`    | Go                          | `/api/orders` — `OrderService` orchestrates `PackagingService` (Strategy + Decorator) and `PricingService` (Chain). |
+| `frontend/`         | React + Vite + TypeScript   | Warehouse UI: `DuckTable`/`DuckForm`, singleton `services.duck`, active-record `Duck` model, bilingual i18n. |
+| `shared/enums.json` | —                           | single source of truth for color/size, loaded by every service. |
+| `docs/`             | markdown                    | `plan.md`, `assumptions.md`.                                 |
+| `backlog/`          | markdown                    | per-severity tickets (active + completed).                   |
+| `.claude/`          | config                      | agents, skills, audit standards.                             |
 
 ## Scripts
 

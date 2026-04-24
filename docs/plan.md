@@ -127,21 +127,26 @@ Each step records `{name, amount, note}` — the response trace is free.
 
 - [x] docker-compose with Mongo
 - [x] warehouse-service: Mongo + counters + CRUD — verified end-to-end with curl
-- [ ] React table + add/edit/delete — end-to-end for Warehouse **← in progress**
+- [x] React table + add/edit/delete — end-to-end for Warehouse
 - [x] store-service: Go scaffold, HTTP server, `/api/orders` wired
 - [x] Packaging Strategy + Decorator in Go (14 subtests)
 - [x] Pricing Chain in Go (5 subtests + named constants, no magic numbers)
 - [x] Wire Store → Warehouse HTTP client for price lookup
 - [x] Warehouse `GET /api/ducks/lookup?color&size` — internal endpoint for store
 - [x] Assumptions documented in [docs/assumptions.md](./assumptions.md)
-- [ ] READMEs: per-service run instructions, pattern rationale
+- [x] READMEs: per-service run instructions, pattern rationale
 - [x] Root README: dev workflow, compose profiles, devcontainers
 
-## Test counts
+## Tests
 
-- warehouse-service: **78** (validator 21 + service 25 + repo 16 + app/routes 16)
-- store-service: **33** (packaging 14 subtests + pricing 5 + order 9 + warehouse 5)
-- **Total: 111 tests, all passing**
+Run `bash run.sh test` for the live counts — numbers drift fast and the
+plan is not the source of truth. Coverage spans pure validator tests,
+fake-repo service tests, real-Mongo repo + db tests, a `ServiceContainer`
+unit test, Supertest integration tests against a real in-memory Mongo,
+table-driven packaging strategy × protection tests, pricing-rule scenario
+tests, `httptest.NewServer`-backed warehouse-client tests, MSW-backed
+frontend service tests, unit tests for the `Duck` model and i18n drift,
+and a full-flow integration test for the Warehouse page.
 
 ## Fallback plan
 

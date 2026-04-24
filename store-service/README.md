@@ -31,12 +31,14 @@ POST /api/orders
 ## Layout
 
 ```
-cmd/server/main.go          # wire client → handler, listen
+cmd/server/main.go          # wire services → handler; listen + graceful shutdown
 internal/
+├── enums/                  # load shared/enums.json at startup
+├── service/                # BaseService (Name()) embedded by all services
 ├── packaging/              # Strategy + Decorator
 ├── pricing/                # Chain of Responsibility
-├── order/                  # HTTP handler composing packaging + pricing + client
-└── warehouse/              # HTTP client to warehouse-service
+├── order/                  # OrderService: validate → lookup → package → price
+└── warehouse/              # HTTP client to warehouse-service (ErrDuckNotFound)
 ```
 
 ## Key patterns (spec-required)
@@ -67,11 +69,7 @@ All rates and thresholds are named constants at the top of the file — no magic
 
 ## Tests
 
-**33 tests**:
-- `internal/packaging` — 14 table-driven subtests (5 material × size, 9 protection × material+mode)
-- `internal/pricing` — 5 scenario tests covering all rules, including air bulk shipping discount
-- `internal/order` — 9 handler tests using a fake `WarehouseClient`
-- `internal/warehouse` — 5 client tests using `httptest.NewServer`
+Run `bash run.sh test store` from the repo root for the live count. Coverage: table-driven tests for every packaging strategy × protection combination, scenario tests for every pricing rule (including the air-bulk discount), handler tests against a fake `WarehouseClient`, `httptest.NewServer`-backed warehouse-client tests, enum-load tests, a drift guard against `shared/enums.json`, and a `BaseService` sanity test.
 
 ## Assumptions
 

@@ -38,20 +38,25 @@ The service listens on **4001**.
 
 ```
 src/
-├── constants/ducks.js          # COLORS, SIZES enums (single source of truth)
-├── validation/duckValidator.js # pure validation (input + update)
-├── services/duckService.js     # business logic: merge-on-add, soft-delete, list, lookup
-├── repos/duckRepo.js           # MongoDB driver calls; _id ↔ id mapping + counters
-├── routes/ducks.js             # Express router
+├── constants/ducks.js          # COLORS, SIZES enums (reads shared/enums.json)
+├── db/mongo.js                 # connect, createDucksIndex, createCounters
+├── validation/duckValidator.js # pure validation (input + update + lookup query)
+├── services/
+│   ├── BaseService.js          # requireActive(repo, id) guard shared by domain services
+│   └── duckService.js          # business logic: merge-on-add, soft-delete, list, lookup
+├── repos/duckRepo.js           # MongoDB driver calls; _id ↔ id mapping
+├── routes/ducks.js             # Express router (parseId, validateLookupQuery)
+├── container.js                # ServiceContainer (register/get) — extension point
 ├── app.js                      # app factory: middleware, router, error handler
-├── server.js                   # prod entry: connect Mongo, create index, listen
+├── server.js                   # prod entry: connect Mongo, build container, listen, SIGTERM
 └── errors.js                   # ValidationError, NotFoundError
 ```
 
 ## Key design notes
 
 - **Layering:** `routes → services → repos → db`. Routes never touch Mongo; repos never format HTTP responses.
-- **Logical deletion:** every read filters `deleted: false`. Deleted rows are terminal — can't be updated, re-deleted, or matched on re-add.
+- **Service container:** `ServiceContainer` registers each service by name; `createApp` pulls them out for each router, so adding a second service is a one-line change in `server.js`.
+- **Logical deletion:** every read filters `deleted: false`. Deleted rows are terminal — can't be updated, re-deleted, or matched on re-add. Repo mutation methods filter `deleted: false` too, so the invariant is enforced at the data-access boundary.
 - **Integer IDs:** `counters` collection with atomic `findOneAndUpdate({$inc:{seq:1}}, {upsert:true})`. Spec says `Id: Integer`, Mongo prefers ObjectId — the repo bridges via `toDuck({_id, ...})`.
 - **Merge-on-add:** POST with matching `{color, size, price}` on a non-deleted duck increments quantity instead of inserting (spec requirement e.ii).
 - **Readonly fields:** `update(id, fields)` silently whitelists `price`/`quantity` via `pickEditableFields` — color/size in the payload are dropped, not rejected.
@@ -59,11 +64,7 @@ src/
 
 ## Tests
 
-**78 tests** across:
-- `validation/duckValidator.test.js` — 21, pure
-- `services/duckService.test.js` — 25, fake repo
-- `repos/duckRepo.test.js` — 16, real Mongo against test db
-- `app.test.js` — 16, Supertest + real Mongo
+Run `bash run.sh test warehouse` from the repo root for the live count. The suite covers pure validator tests, fake-repo service tests, real-Mongo repo + db tests, a `ServiceContainer` unit test, and Supertest integration tests against a real in-memory Mongo.
 
 ## Assumptions
 
