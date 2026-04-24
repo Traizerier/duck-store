@@ -1,0 +1,52 @@
+# Control-plane deployment. Separate compose project from the managed
+# stacks — this way a `run.sh down` on warehouse/store doesn't stop the
+# control plane, and vice-versa.
+#
+# Bring it up with:
+#   docker compose -p duckstore-control-plane --env-file .env.control-plane \
+#     -f docker-compose.control-plane.yml up -d --build
+# (run.sh's `control-plane` verb does this for you.)
+#
+# The container needs:
+#   - the Docker socket mounted, so it can invoke compose against the
+#     warehouse and store projects;
+#   - the repo mounted at its host path, so bind mounts declared in the
+#     managed stacks' compose files resolve identically whether compose
+#     is invoked from inside this container or from the host.
+
+services:
+  control-plane:
+    build:
+      context: ./stack-manager
+    container_name: duckstore-control-plane
+    ports:
+      - "${CONTROL_PLANE_HOST_PORT:-4000}:4000"
+    environment:
+      PORT: "4000"
+      # The control plane invokes `docker compose` from /workspace inside
+      # the container. The stack compose files use relative bind mount
+      # sources (./backend:/workspace/...) which compose resolves against
+      # the compose-file directory, i.e. /workspace. Since the Docker
+      # daemon on the host interprets those source paths from the host's
+      # perspective, the host repo must be reachable at /workspace from
+      # dockerd too — which is only guaranteed if you mount it there or
+      # on Linux where /workspace isn't special. On Windows + Docker
+      # Desktop, the control-plane-in-container pattern is for HTTP
+      # control surface + discovery; stack lifecycle against the managed
+      # stacks works cleanly on Mac/Linux targets.
+      REPO_ROOT: "/workspace"
+      CONTROL_PLANE_TOKEN: "${CONTROL_PLANE_TOKEN}"
+      # host.docker.internal resolves to the host from inside the
+      # container on Docker Desktop (Mac + Windows). On Linux, set
+      # BACKEND_HOST=172.17.0.1 or similar in an override.
+      BACKEND_HOST: "${BACKEND_HOST:-host.docker.internal}"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: ${REPO_ROOT_HOST}
+        target: /workspace
+        read_only: true
+    working_dir: /workspace
+    restart: unless-stopped

@@ -73,10 +73,28 @@ docker compose -p duckstore-store     --env-file .env.store     -f docker-compos
 | `backend/`          | Node + Express + MongoDB    | schema-driven inventory service + order pipeline (packaging + pricing). Same image deployed twice — once as the warehouse instance, once as the store instance. |
 | `backend/src/schemas/` | JSON                     | entity-type definitions. `duck.json` is today's only schema; each schema instantiates a full CRUD surface at `/api/{plural}`. |
 | `frontend/`         | React + Vite + TypeScript   | Single-page inventory UI, typed `ServiceContainer`, active-record `Duck` model, bilingual i18n. Per-stack branding via `VITE_TITLE`. |
+| `stack-manager/`    | Node + Express              | control-plane HTTP API. Discovers stacks from `.env.*`, orchestrates them via docker compose. Bearer-token auth. Not a managed stack — sits alongside. |
 | `shared/enums.json` | JSON                        | single source of truth for color/size enums; schemas reference entries by name. |
 | `docs/`             | markdown                    | `plan.md`, `assumptions.md`.                                 |
 | `backlog/`          | markdown                    | per-severity tickets (active + completed).                   |
 | `.claude/`          | config                      | agents, skills, audit standards.                             |
+
+### Control plane
+
+`stack-manager/` is a small Express service that exposes the stack-lifecycle surface programmatically. Start it with `bash run.sh cp up` (port 4000 by default). Everything except `/health` requires a bearer token — see `.env.control-plane`.
+
+```
+GET    /health                       liveness probe (no auth)
+GET    /stacks                       list discovered stacks + metadata
+GET    /stacks/:name                 container status for one stack
+POST   /stacks/:name/up              start it
+POST   /stacks/:name/down            stop it
+POST   /stacks/:name/restart         bounce it
+GET    /stacks/:name/logs?tail=N     recent logs (default N=200, max 5000)
+GET    /stacks/:name/health          proxy the stack's backend /health
+```
+
+Safety: the manager only touches stacks it discovered from `.env.*` at the repo root (excluding `.env`, `.env.example`, `.env.control-plane`, and any `*.local` overrides). Stack names must match `^[a-z0-9][a-z0-9-]{0,31}$`, so there's no way to shell-inject into the `docker compose -p duckstore-<name>` invocation.
 
 ## Scripts
 

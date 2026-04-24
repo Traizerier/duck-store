@@ -187,6 +187,59 @@ case "$cmd" in
         printf '%s\n' "${STACKS[@]}"
         ;;
 
+    control-plane|cp)
+        # The control plane is its own compose project, separate from the
+        # managed stacks. It needs REPO_ROOT_HOST so the mounts in
+        # docker-compose.control-plane.yml resolve to paths the host
+        # Docker daemon can see.
+        export REPO_ROOT_HOST="$repo_root"
+        sub=${1:-up}; shift 2>/dev/null || true
+        cp_compose() {
+            docker compose \
+                -p duckstore-control-plane \
+                --env-file .env.control-plane \
+                -f docker-compose.control-plane.yml \
+                "$@"
+        }
+        case "$sub" in
+            up)
+                info "Bringing up control plane (repo=$REPO_ROOT_HOST)"
+                cp_compose up -d --build --remove-orphans
+                echo
+                info "Control plane:"
+                echo "  curl http://localhost:\${CONTROL_PLANE_HOST_PORT:-4000}/health"
+                echo "  curl -H \"Authorization: Bearer \$CONTROL_PLANE_TOKEN\" http://localhost:4000/stacks"
+                ;;
+            down|stop)
+                info "Tearing down control plane"
+                cp_compose down --remove-orphans
+                ;;
+            logs)
+                cp_compose logs -f --tail=200
+                ;;
+            ps|status)
+                cp_compose ps
+                ;;
+            restart)
+                cp_compose restart
+                ;;
+            shell|exec)
+                cp_compose exec control-plane sh
+                ;;
+            test)
+                cp_compose exec control-plane npm run test:run
+                ;;
+            rebuild|build)
+                cp_compose build
+                ;;
+            *)
+                err "Unknown control-plane subcommand: $sub"
+                err "Try: up | down | logs | ps | restart | shell | test | rebuild"
+                exit 1
+                ;;
+        esac
+        ;;
+
     help|--help|-h)
         cat <<USAGE
 ${BOLD}bash run.sh [command] [stack...]${NC}
@@ -213,6 +266,16 @@ ${BOLD}Inspection:${NC}
 ${BOLD}Work inside containers:${NC}
   shell <stack> [svc]   Open a bash shell (default svc: backend).
   test  <stack> [svc]   Run the test suite (default svc: backend).
+
+${BOLD}Control plane (stack-manager HTTP API):${NC}
+  control-plane up      Start the control plane (duckstore-control-plane project)
+  control-plane down    Stop the control plane
+  control-plane logs    Tail its logs
+  control-plane ps      Show its container status
+  control-plane test    Run stack-manager tests inside the container
+                        Alias: ${BOLD}cp${NC} (e.g. bash run.sh cp up).
+                        The control plane is NOT a managed stack — it sits
+                        alongside them and can start/stop them via HTTP.
 
 ${BOLD}Add a third stack:${NC}
   1. Drop in ${BOLD}.env.<name>${NC} with INSTANCE_NAME, FRONTEND_TITLE, host ports, MONGO_DB_NAME.

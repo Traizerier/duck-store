@@ -1,0 +1,23 @@
+{
+  "name": "duckstore-stack-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Programmatic control plane for the duck-store compose stacks.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "vitest",
+    "test:run": "vitest --run"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0",
+    "vitest": "^1.6.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
