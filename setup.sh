@@ -64,6 +64,29 @@ version_ge() {
     [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]
 }
 
+# Run a command with a wall-clock timeout. Prevents `docker compose version`
+# from hanging forever when Docker Desktop is installed but not running (the
+# named pipe blocks indefinitely on Windows). Exit 124 on timeout, mirroring
+# coreutils `timeout`.
+with_timeout() {
+    local secs=$1; shift
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$secs" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        gtimeout "$secs" "$@"
+    else
+        "$@" &
+        local pid=$!
+        ( sleep "$secs" && kill -TERM "$pid" 2>/dev/null ) &
+        local watchdog=$!
+        wait "$pid" 2>/dev/null
+        local rc=$?
+        kill "$watchdog" 2>/dev/null
+        wait "$watchdog" 2>/dev/null
+        return $rc
+    fi
+}
+
 # ---------- version checks ----------
 check_node() {
     if ! command -v node >/dev/null 2>&1; then
@@ -111,13 +134,28 @@ check_go() {
 }
 
 check_docker() {
-    if ! docker compose version >/dev/null 2>&1; then
+    # Guard against Docker Desktop's pipe hang: if `docker` isn't even on
+    # PATH, no point waiting. Then give `docker compose version` 5s to
+    # answer; if it doesn't, treat it as "daemon not running" rather than
+    # letting the whole script block forever.
+    if ! command -v docker >/dev/null 2>&1; then
         missing_optional+=("docker")
-        tool_note[docker]="docker compose not available"
+        tool_note[docker]="docker CLI not on PATH"
         return
     fi
-    local v major
-    v=$(docker compose version --short 2>/dev/null)
+    local v major probe_rc
+    v=$(with_timeout 5 docker compose version --short 2>/dev/null)
+    probe_rc=$?
+    if [ $probe_rc -eq 124 ]; then
+        missing_optional+=("docker")
+        tool_note[docker]="docker compose timed out — is Docker Desktop running?"
+        return
+    fi
+    if [ $probe_rc -ne 0 ] || [ -z "$v" ]; then
+        missing_optional+=("docker")
+        tool_note[docker]="docker compose plugin not available"
+        return
+    fi
     # Strip any leading "v" (older docker compose builds emitted "v2.29.1").
     v="${v#v}"
     major="${v%%.*}"
