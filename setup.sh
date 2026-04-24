@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Duck Store — verify & install dependencies for all services.
 # Requires bash. On Windows, use Git Bash or WSL.
-# Reads required versions from .tool-versions and tries to match them exactly.
+# Reads required versions from .tool-versions and treats them as a minimum
+# floor — anything at or above the listed version is accepted.
 
 set -uo pipefail
 
@@ -56,21 +57,28 @@ declare -a missing_optional=()
 declare -a wrong_version=()
 declare -A tool_note=()
 
+# ---------- version helpers ----------
+# True if $1 >= $2 under version-sort. Handles X, X.Y, X.Y.Z uniformly.
+version_ge() {
+    [ "$1" = "$2" ] && return 0
+    [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]
+}
+
 # ---------- version checks ----------
 check_node() {
     if ! command -v node >/dev/null 2>&1; then
         missing_required+=("node")
-        tool_note[node]="not installed (need v${require_node_major}.x)"
+        tool_note[node]="not installed (need v${require_node_major}+)"
         return
     fi
     local v major
     v=$(node --version | sed 's/^v//')
     major="${v%%.*}"
-    if [ "$major" = "$require_node_major" ]; then
-        ok "node: v$v (matches required ${require_node_major}.x)"
+    if version_ge "$major" "$require_node_major"; then
+        ok "node: v$v (meets minimum v${require_node_major})"
     else
         wrong_version+=("node")
-        tool_note[node]="installed v$v, required v${require_node_major}.x"
+        tool_note[node]="installed v$v, below minimum v${require_node_major}"
     fi
 }
 
@@ -88,17 +96,17 @@ check_npm() {
 check_go() {
     if ! command -v go >/dev/null 2>&1; then
         missing_optional+=("go")
-        tool_note[go]="not installed (need go${require_go}.x)"
+        tool_note[go]="not installed (need go${require_go}+)"
         return
     fi
     local v mm
     v=$(go version | awk '{print $3}' | sed 's/^go//')
     mm=$(echo "$v" | awk -F. '{print $1"."$2}')
-    if [ "$mm" = "$require_go" ]; then
-        ok "go:  go$v (matches required go${require_go}.x)"
+    if version_ge "$mm" "$require_go"; then
+        ok "go:  go$v (meets minimum go${require_go})"
     else
         wrong_version+=("go")
-        tool_note[go]="installed go$v, required go${require_go}.x"
+        tool_note[go]="installed go$v, below minimum go${require_go}"
     fi
 }
 
@@ -110,12 +118,14 @@ check_docker() {
     fi
     local v major
     v=$(docker compose version --short 2>/dev/null)
+    # Strip any leading "v" (older docker compose builds emitted "v2.29.1").
+    v="${v#v}"
     major="${v%%.*}"
-    if [ "$major" = "$require_docker" ]; then
-        ok "docker compose: $v (matches required ${require_docker}+)"
+    if version_ge "$major" "$require_docker"; then
+        ok "docker compose: $v (meets minimum ${require_docker}+)"
     else
         wrong_version+=("docker")
-        tool_note[docker]="installed $v, required ${require_docker}+"
+        tool_note[docker]="installed $v, below minimum ${require_docker}+"
     fi
 }
 
@@ -237,14 +247,14 @@ install_hint() {
     case "$platform" in
         windows)
             case "$tool" in
-                node)   echo "winget install --id OpenJS.NodeJS --version <${require_node_major}.x>   or   $(vendor_url node)";;
-                go)     echo "winget install --id GoLang.Go --version <${require_go}.x>   or   $(vendor_url go)";;
+                node)   echo "winget install --id OpenJS.NodeJS (v${require_node_major}+)   or   $(vendor_url node)";;
+                go)     echo "winget install --id GoLang.Go (go${require_go}+)   or   $(vendor_url go)";;
                 docker) echo "winget install --id Docker.DockerDesktop   or   $(vendor_url docker)";;
             esac;;
         mac)
             case "$tool" in
-                node)   echo "brew install node@${require_node_major}   or   $(vendor_url node)";;
-                go)     echo "brew install go@${require_go}   or   $(vendor_url go)";;
+                node)   echo "brew install node@${require_node_major} (or newer)   or   $(vendor_url node)";;
+                go)     echo "brew install go@${require_go} (or newer)   or   $(vendor_url go)";;
                 docker) echo "brew install --cask docker   or   $(vendor_url docker)";;
             esac;;
         *)
