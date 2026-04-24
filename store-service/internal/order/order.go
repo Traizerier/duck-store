@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"duckstore/store-service/internal/enums"
 	"duckstore/store-service/internal/packaging"
 	"duckstore/store-service/internal/pricing"
+	"duckstore/store-service/internal/service"
 	"duckstore/store-service/internal/warehouse"
 )
 
@@ -29,70 +32,148 @@ type Response struct {
 	Details     []pricing.Detail       `json:"details"`
 }
 
-// WarehouseClient is the contract the order handler needs from the warehouse
-// service. A fake in tests, a real HTTP client in production.
+// --- consumer-side interfaces -----------------------------------------------
+
+// WarehouseClient is the contract OrderService needs from the warehouse.
+// A fake in tests, a real HTTP client in production.
 type WarehouseClient interface {
 	LookupPrice(ctx context.Context, color, size string) (float64, error)
 }
 
-// Handler builds a POST /api/orders handler. Takes the warehouse client plus
-// the shared enums so color/size validation reads from the canonical source.
-func Handler(client WarehouseClient, e *enums.Enums) http.HandlerFunc {
+// Packager is what OrderService needs from a packaging implementation. The
+// interface is declared here (consumer side) so packaging.PackagingService
+// satisfies it structurally — no reverse dependency.
+type Packager interface {
+	Build(size packaging.Size, mode packaging.ShippingMode) (packaging.Package, error)
+}
+
+// Pricer is what OrderService needs from a pricing implementation.
+type Pricer interface {
+	Calculate(req pricing.Request) pricing.Result
+}
+
+// --- service ----------------------------------------------------------------
+
+// OrderService orchestrates the order-processing pipeline: validate → lookup
+// warehouse price → build packaging → calculate total. Dependencies are
+// injected so tests (and future reusers like a CLI) can swap them out.
+type OrderService struct {
+	service.BaseService
+	warehouse WarehouseClient
+	packager  Packager
+	pricer    Pricer
+	enums     *enums.Enums
+}
+
+func NewService(wh WarehouseClient, pkg Packager, pr Pricer, e *enums.Enums) *OrderService {
+	return &OrderService{
+		BaseService: service.New("order"),
+		warehouse:   wh,
+		packager:    pkg,
+		pricer:      pr,
+		enums:       e,
+	}
+}
+
+// --- error types ------------------------------------------------------------
+
+// ValidationError carries field-keyed messages for 400 responses. Parallels
+// warehouse-service's envelope so a shared client can parse both.
+type ValidationError struct {
+	Fields map[string]string
+}
+
+func (e *ValidationError) Error() string { return "validation failed" }
+
+// ErrInternal marks "validator and packaging/pricing disagree" failures —
+// a server-side bug, not a client input problem. Maps to 500.
+var ErrInternal = errors.New("internal error")
+
+// --- Process: pure business logic ------------------------------------------
+
+// Process runs the order pipeline without any HTTP concerns. Returns typed
+// errors so Handler can map them to status codes:
+//   - *ValidationError          → 400 ValidationError envelope
+//   - errors.Is ErrDuckNotFound → 404
+//   - errors.Is ErrInternal     → 500
+//   - anything else             → 502 (upstream warehouse fault)
+func (s *OrderService) Process(ctx context.Context, req Request) (Response, error) {
+	// Normalize before validation so downstream pricing sees the same
+	// value we validated against. Without this, "  USA  " passes the
+	// non-empty check but falls through to the default (+15%) tax.
+	req.Country = strings.TrimSpace(req.Country)
+
+	if errs := validate(req, s.enums); errs != nil {
+		return Response{}, &ValidationError{Fields: errs}
+	}
+
+	price, err := s.warehouse.LookupPrice(ctx, req.Color, req.Size)
+	if err != nil {
+		// Forward as-is; the wrap preserves errors.Is(..., ErrDuckNotFound).
+		return Response{}, err
+	}
+
+	size := packaging.Size(req.Size)
+	mode := packaging.ShippingMode(req.ShippingMode)
+	pkg, err := s.packager.Build(size, mode)
+	if err != nil {
+		// Unreachable in practice — validate() rejects unknown sizes before
+		// we get here. Guarded so a future validator drift doesn't panic.
+		return Response{}, fmt.Errorf("%w: %s", ErrInternal, err.Error())
+	}
+	result := s.pricer.Calculate(pricing.Request{
+		Quantity:     req.Quantity,
+		UnitPrice:    price,
+		Material:     pkg.Material(),
+		Country:      req.Country,
+		ShippingMode: mode,
+	})
+
+	return Response{
+		PackageType: string(pkg.Material()),
+		Protections: pkg.Protections(),
+		Total:       result.Total,
+		Details:     result.Details,
+	}, nil
+}
+
+// --- Handler: HTTP shell ----------------------------------------------------
+
+// Handler is the thin HTTP adapter around Process. It decodes the request,
+// delegates the pipeline, and translates typed errors to status codes.
+func (s *OrderService) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req Request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			writeError(w, http.StatusBadRequest, "BadRequest", "invalid JSON: "+err.Error())
 			return
 		}
 
-		// Normalize before validation so downstream pricing sees the same
-		// value we validated against. Without this, "  USA  " passes the
-		// non-empty check but falls through to the default (+15%) tax.
-		req.Country = strings.TrimSpace(req.Country)
-
-		if errs := validate(req, e); errs != nil {
-			writeValidationError(w, errs)
-			return
-		}
-
-		price, err := client.LookupPrice(r.Context(), req.Color, req.Size)
+		resp, err := s.Process(r.Context(), req)
 		if err != nil {
-			// A 404 from the warehouse means the warehouse answered
-			// correctly — this color+size combination has no active duck.
-			// That's a client-input problem (404), not an upstream fault
-			// (502); surfacing it as 502 would page on-call for nothing.
-			if errors.Is(err, warehouse.ErrDuckNotFound) {
-				writeError(w, http.StatusNotFound, "no duck available for color="+req.Color+", size="+req.Size)
-				return
+			var verr *ValidationError
+			switch {
+			case errors.As(err, &verr):
+				writeValidationError(w, verr.Fields)
+			case errors.Is(err, warehouse.ErrDuckNotFound):
+				writeError(w, http.StatusNotFound, "NotFoundError",
+					"no duck available for color="+req.Color+", size="+req.Size)
+			case errors.Is(err, ErrInternal):
+				// 500s are never a client-actionable message. Keep the
+				// detail on the server, tagged with this service's Name()
+				// so a future structured logger (ticket 004) can pick it
+				// up without shape churn.
+				log.Printf("[%s] internal error: %v", s.Name(), err)
+				writeError(w, http.StatusInternalServerError,
+					"InternalServerError", "internal error")
+			default:
+				writeError(w, http.StatusBadGateway, "UpstreamError",
+					"warehouse lookup failed: "+err.Error())
 			}
-			writeError(w, http.StatusBadGateway, "warehouse lookup failed: "+err.Error())
 			return
 		}
 
-		size := packaging.Size(req.Size)
-		mode := packaging.ShippingMode(req.ShippingMode)
-		pkg, err := packaging.Build(size, mode)
-		if err != nil {
-			// Unreachable in practice — validate() rejects unknown sizes
-			// before we get here. Guarding anyway so a future validator
-			// drift (or direct call) doesn't take down the server.
-			writeError(w, http.StatusInternalServerError, "internal error: "+err.Error())
-			return
-		}
-		result := pricing.Calculate(pricing.Request{
-			Quantity:     req.Quantity,
-			UnitPrice:    price,
-			Material:     pkg.Material(),
-			Country:      req.Country,
-			ShippingMode: mode,
-		})
-
-		writeJSON(w, http.StatusOK, Response{
-			PackageType: string(pkg.Material()),
-			Protections: pkg.Protections(),
-			Total:       result.Total,
-			Details:     result.Details,
-		})
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 
@@ -136,10 +217,18 @@ func joinModes(ms []packaging.ShippingMode) string {
 
 // --- HTTP response helpers --------------------------------------------------
 
-// writeError emits {error: msg} — used for non-validation problems like
-// invalid JSON or upstream warehouse failures.
-func writeError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]string{"error": msg})
+// writeError emits the canonical error envelope shared across both services:
+//
+//	{"error": <TypedCode>, "message": <human-readable>}
+//
+// The typed code (e.g. "NotFoundError", "UpstreamError") lets a client
+// dispatch on the error class; the message is free-form debug copy.
+// Mirrors warehouse-service/src/app.js's error middleware.
+func writeError(w http.ResponseWriter, code int, typedCode, msg string) {
+	writeJSON(w, code, map[string]string{
+		"error":   typedCode,
+		"message": msg,
+	})
 }
 
 // writeValidationError emits {error: "ValidationError", errors: {field: msg}}

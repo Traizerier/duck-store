@@ -1,10 +1,12 @@
 package warehouse
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -52,6 +54,15 @@ func (c *Client) LookupPrice(ctx context.Context, color, size string) (float64, 
 		return 0, fmt.Errorf("color=%s, size=%s: %w", color, size, ErrDuckNotFound)
 	}
 	if resp.StatusCode != http.StatusOK {
+		// Include a trimmed body snippet so the operator can see the
+		// upstream's structured error (e.g. the warehouse's
+		// ValidationError envelope) instead of just a status code. Capped
+		// at 1 KiB so a misbehaving upstream can't blow memory.
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		snippet = bytes.TrimSpace(snippet)
+		if len(snippet) > 0 {
+			return 0, fmt.Errorf("warehouse returned status %d: %s", resp.StatusCode, snippet)
+		}
 		return 0, fmt.Errorf("warehouse returned status %d", resp.StatusCode)
 	}
 

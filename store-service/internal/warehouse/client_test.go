@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +86,29 @@ func TestClient_LookupPrice_ServerError(t *testing.T) {
 	_, err := NewClient(server.URL).LookupPrice(context.Background(), "Red", "Large")
 	if err == nil {
 		t.Error("expected error for 500, got nil")
+	}
+}
+
+// Non-200 responses should include the upstream body in the error so
+// operators see the warehouse's structured error (e.g. its
+// ValidationError envelope) instead of just "status 400".
+func TestClient_LookupPrice_IncludesErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"ValidationError","errors":{"color":"must be one of: Red, Green"}}`))
+	}))
+	defer server.Close()
+
+	_, err := NewClient(server.URL).LookupPrice(context.Background(), "Purple", "Large")
+	if err == nil {
+		t.Fatal("expected error for 400, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "400") {
+		t.Errorf("error missing status: %v", err)
+	}
+	if !strings.Contains(msg, "ValidationError") {
+		t.Errorf("error does not include upstream body snippet: %v", err)
 	}
 }
 

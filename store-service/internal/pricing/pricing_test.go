@@ -110,3 +110,26 @@ func TestCalculate(t *testing.T) {
 		})
 	}
 }
+
+// Thin adapter over Calculate — one happy-path smoke so regressions in the
+// method signature are caught without duplicating the rule-level coverage
+// above.
+func TestPricingService_Calculate(t *testing.T) {
+	svc := NewService()
+	if svc.Name() != "pricing" {
+		t.Errorf("Name() = %q, want %q", svc.Name(), "pricing")
+	}
+
+	got := svc.Calculate(Request{
+		Quantity:     5,
+		UnitPrice:    10,
+		Material:     packaging.Wood,
+		Country:      "USA",
+		ShippingMode: packaging.Air,
+	})
+	// Same math as the order happy-path: base 50 → wood +5% → USA +18% →
+	// air 30×5 = 150 → 211.95.
+	if !almostEqual(got.Total, 211.95) {
+		t.Errorf("Total = %f, want 211.95 (±%f)", got.Total, eps)
+	}
+}

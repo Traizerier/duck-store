@@ -119,3 +119,25 @@ func TestBuild_UnknownSize(t *testing.T) {
 		})
 	}
 }
+
+// The service is a thin adapter over Build; one test that round-trips a
+// happy-path and an error-path is enough to catch regressions where the
+// method signature drifts from the underlying function.
+func TestPackagingService_Build(t *testing.T) {
+	svc := NewService()
+	if svc.Name() != "packaging" {
+		t.Errorf("Name() = %q, want %q", svc.Name(), "packaging")
+	}
+
+	pkg, err := svc.Build(Large, Air)
+	if err != nil {
+		t.Fatalf("Build(Large, Air): %v", err)
+	}
+	if pkg.Material() != Wood {
+		t.Errorf("Material = %q, want %q", pkg.Material(), Wood)
+	}
+
+	if _, err := svc.Build("Humongous", Air); err == nil {
+		t.Error("Build(Humongous, Air): expected error on unknown size")
+	}
+}

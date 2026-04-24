@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"duckstore/store-service/internal/enums"
+	"duckstore/store-service/internal/packaging"
+	"duckstore/store-service/internal/pricing"
 	"duckstore/store-service/internal/warehouse"
 )
 
@@ -34,6 +36,13 @@ func testEnums() *enums.Enums {
 	}
 }
 
+// newService wires up an OrderService with the real packaging/pricing
+// services (they're pure — no need for fakes) and the provided warehouse
+// client + enums. Keeps test arrange blocks one-liners.
+func newService(client WarehouseClient, e *enums.Enums) *OrderService {
+	return NewService(client, packaging.NewService(), pricing.NewService(), e)
+}
+
 func postOrder(t *testing.T, client WarehouseClient, body any) *httptest.ResponseRecorder {
 	return postOrderWithEnums(t, client, testEnums(), body)
 }
@@ -47,7 +56,7 @@ func postOrderWithEnums(t *testing.T, client WarehouseClient, e *enums.Enums, bo
 	req := httptest.NewRequest(http.MethodPost, "/api/orders", bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	Handler(client, e)(rec, req)
+	newService(client, e).Handler()(rec, req)
 	return rec
 }
 
@@ -87,7 +96,7 @@ func TestHandler_HappyPath(t *testing.T) {
 func TestHandler_InvalidJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/orders", bytes.NewReader([]byte("not json")))
 	rec := httptest.NewRecorder()
-	Handler(&fakeWarehouse{price: 10}, testEnums())(rec, req)
+	newService(&fakeWarehouse{price: 10}, testEnums()).Handler()(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
@@ -197,13 +206,67 @@ func TestHandler_WarehouseDuckNotFound_ReturnsNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want 404 (body: %s)", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Error string `json:"error"`
+		Error   string `json:"error"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v (raw: %s)", err, rec.Body.String())
 	}
-	if body.Error == "" {
-		t.Errorf("body.error empty; want a human-readable message (body: %s)", rec.Body.String())
+	if body.Error != "NotFoundError" {
+		t.Errorf("body.error = %q, want \"NotFoundError\"", body.Error)
+	}
+	if body.Message == "" {
+		t.Errorf("body.message empty; want a human-readable message (body: %s)", rec.Body.String())
+	}
+}
+
+// Canonical envelope regression guard: all non-validation errors carry
+// {error: TypedCode, message: ...} so a shared client can dispatch on
+// body.error and still read a human-readable body.message.
+func TestHandler_ErrorEnvelope_HasTypedCodeAndMessage(t *testing.T) {
+	cases := []struct {
+		name         string
+		client       WarehouseClient
+		body         any
+		wantStatus   int
+		wantCode     string
+	}{
+		{"invalid JSON", &fakeWarehouse{price: 10}, "not json", http.StatusBadRequest, "BadRequest"},
+		{"warehouse 502", &fakeWarehouse{err: errors.New("warehouse down")}, Request{
+			Color: "Red", Size: "Large", Quantity: 5, Country: "USA", ShippingMode: "air",
+		}, http.StatusBadGateway, "UpstreamError"},
+		{"warehouse 404", &fakeWarehouse{err: warehouse.ErrDuckNotFound}, Request{
+			Color: "Red", Size: "Large", Quantity: 5, Country: "USA", ShippingMode: "air",
+		}, http.StatusNotFound, "NotFoundError"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var rec *httptest.ResponseRecorder
+			if s, ok := c.body.(string); ok {
+				// invalid-JSON case: bypass postOrder's marshal.
+				req := httptest.NewRequest(http.MethodPost, "/api/orders", bytes.NewReader([]byte(s)))
+				rec = httptest.NewRecorder()
+				newService(c.client, testEnums()).Handler()(rec, req)
+			} else {
+				rec = postOrder(t, c.client, c.body)
+			}
+			if rec.Code != c.wantStatus {
+				t.Fatalf("status = %d, want %d (body: %s)", rec.Code, c.wantStatus, rec.Body.String())
+			}
+			var body struct {
+				Error   string `json:"error"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if body.Error != c.wantCode {
+				t.Errorf("body.error = %q, want %q", body.Error, c.wantCode)
+			}
+			if body.Message == "" {
+				t.Errorf("body.message empty (body: %s)", rec.Body.String())
+			}
+		})
 	}
 }
 

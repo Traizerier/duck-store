@@ -12,6 +12,8 @@ import (
 
 	"duckstore/store-service/internal/enums"
 	"duckstore/store-service/internal/order"
+	"duckstore/store-service/internal/packaging"
+	"duckstore/store-service/internal/pricing"
 	"duckstore/store-service/internal/warehouse"
 )
 
@@ -25,10 +27,22 @@ func main() {
 		log.Fatalf("load enums from %s: %v", enumsPath, err)
 	}
 
-	client := warehouse.NewClient(warehouseURL)
+	warehouseClient := warehouse.NewClient(warehouseURL)
+	packagingSvc := packaging.NewService()
+	pricingSvc := pricing.NewService()
+	orderSvc := order.NewService(warehouseClient, packagingSvc, pricingSvc, sharedEnums)
+
+	// Per-service init log. Tags each line with the service's Name() so
+	// operators can see at boot which services got wired in — and the
+	// tagging pattern is the same one used at error sites below, so a
+	// future structured logger (ticket P004) can lift both paths into
+	// slog.Info / slog.Error without shape churn.
+	for _, svc := range []interface{ Name() string }{packagingSvc, pricingSvc, orderSvc} {
+		log.Printf("service initialized: %s", svc.Name())
+	}
 
 	mux := http.NewServeMux()
-	mux.Handle("POST /api/orders", order.Handler(client, sharedEnums))
+	mux.Handle("POST /api/orders", orderSvc.Handler())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
