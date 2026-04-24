@@ -1,0 +1,21 @@
+{
+  "name": "duck",
+  "plural": "ducks",
+  "collection": "ducks",
+  "fields": {
+    "color":    { "type": "enum",    "enumRef": "colors", "required": true },
+    "size":     { "type": "enum",    "enumRef": "sizes",  "required": true },
+    "price":    { "type": "number",  "rule": "positive",     "required": true },
+    "quantity": { "type": "integer", "rule": "non-negative", "required": true }
+  },
+  "editable": ["price", "quantity"],
+  "matchOnInsert": ["color", "size", "price"],
+  "mergeField": "quantity",
+  "lookupBy": ["color", "size"],
+  "defaultSort": { "field": "quantity", "direction": "asc" },
+  "softDelete": true,
+  "orders": {
+    "enabled": true,
+    "lookupItemBy": ["color", "size"]
+  }
+}

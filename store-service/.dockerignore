@@ -1,8 +1,0 @@
-.git
-.gitignore
-.env
-.env.local
-*.log
-bin/
-dist/
-README.md
