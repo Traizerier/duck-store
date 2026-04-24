@@ -49,7 +49,16 @@ export const translations = {
     "color.Yellow": "Yellow",
     "color.Black": "Black",
 
+    "size.XLarge": "Extra Large",
+    "size.Large": "Large",
+    "size.Medium": "Medium",
+    "size.Small": "Small",
+    "size.XSmall": "Extra Small",
+
     "delete.confirm": "Delete {color} {size} duck?",
+
+    "error.requestFailed": "Request failed ({status})",
+    "error.unknown": "Unknown error",
   },
   es: {
     "tab.warehouse": "Almacén",
@@ -92,7 +101,16 @@ export const translations = {
     "color.Yellow": "Amarillo",
     "color.Black": "Negro",
 
+    "size.XLarge": "Extra Grande",
+    "size.Large": "Grande",
+    "size.Medium": "Mediano",
+    "size.Small": "Pequeño",
+    "size.XSmall": "Extra Pequeño",
+
     "delete.confirm": "¿Borrar patito {color} {size}?",
+
+    "error.requestFailed": "Error de solicitud ({status})",
+    "error.unknown": "Error desconocido",
   },
 } as const;
 
@@ -140,8 +158,14 @@ const defaultValue: LocaleContextValue = {
 
 const LocaleContext = createContext<LocaleContextValue>(defaultValue);
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocale] = useState<Locale>("en");
+export function LocaleProvider({
+  children,
+  initialLocale = "en",
+}: {
+  children: ReactNode;
+  initialLocale?: Locale;
+}) {
+  const [locale, setLocale] = useState<Locale>(initialLocale);
   const value: LocaleContextValue = {
     locale,
     setLocale,

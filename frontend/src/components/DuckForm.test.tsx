@@ -24,8 +24,11 @@ describe("DuckForm — add mode", () => {
   it("should offer exactly the five spec sizes", () => {
     render(<DuckForm mode="add" onSubmit={noop} onCancel={noop} />);
     const select = screen.getByLabelText(/size/i) as HTMLSelectElement;
-    const options = within(select).getAllByRole("option").map((o) => o.textContent);
-    expect(options).toEqual(["XLarge", "Large", "Medium", "Small", "XSmall"]);
+    // Option `value` is the spec token; the visible text is the English
+    // translation. Check values — they're what the form submits — so the
+    // assertion survives future locale-label tweaks.
+    const values = within(select).getAllByRole("option").map((o) => (o as HTMLOptionElement).value);
+    expect(values).toEqual(["XLarge", "Large", "Medium", "Small", "XSmall"]);
   });
 
   it("should call onSubmit with the selected values", async () => {

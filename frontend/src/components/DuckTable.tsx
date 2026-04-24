@@ -9,7 +9,7 @@ import {
   useReactTable,
   type SortingState,
 } from "@tanstack/react-table";
-import type { Duck } from "../api/ducks";
+import type { Duck } from "../models/Duck";
 import { useTranslation } from "../i18n/locale";
 
 const columnHelper = createColumnHelper<Duck>();
@@ -36,6 +36,7 @@ export function DuckTable({ ducks, onEdit, onDelete }: DuckTableProps) {
       }),
       columnHelper.accessor("size", {
         header: () => t("col.size"),
+        cell: ({ getValue }) => t(`size.${getValue()}`),
       }),
       columnHelper.accessor("price", {
         header: () => t("col.price"),

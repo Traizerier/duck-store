@@ -141,4 +141,32 @@ describe("Warehouse page", () => {
     expect(deleteSpy).not.toHaveBeenCalled();
     expect(screen.getByText("Red")).toBeInTheDocument();
   });
+
+  it("prefers the server's canonical envelope message over the fallback", async () => {
+    server.use(
+      http.get("/api/ducks", () =>
+        HttpResponse.json(
+          { error: "InternalServerError", message: "warehouse connection refused" },
+          { status: 500 },
+        ),
+      ),
+    );
+    render(<Warehouse />);
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("warehouse connection refused"),
+    );
+  });
+
+  it("renders the error banner in the active locale (Spanish)", async () => {
+    server.use(http.get("/api/ducks", () => new HttpResponse(null, { status: 500 })));
+    const { LocaleProvider } = await import("../i18n/locale");
+    render(
+      <LocaleProvider initialLocale="es">
+        <Warehouse />
+      </LocaleProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("Error de solicitud (500)"),
+    );
+  });
 });

@@ -1,13 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "../i18n/locale";
 import { COLORS, SIZES } from "../constants/ducks";
+import type { DuckInput } from "../services/DuckService";
 
-export interface DuckFormValues {
-  color: string;
-  size: string;
-  price: number;
-  quantity: number;
-}
+// The form collects exactly the fields the service accepts on create;
+// alias the canonical shape from the service so there's one place for
+// someone to add a new editable field to.
+export type DuckFormValues = DuckInput;
 
 interface DuckFormProps {
   mode: "add" | "edit";
@@ -66,7 +65,7 @@ export function DuckForm({
         >
           {SIZES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {t(`size.${s}`)}
             </option>
           ))}
         </select>

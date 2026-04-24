@@ -2,11 +2,18 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DuckTable } from "./DuckTable";
-import type { Duck } from "../api/ducks";
+import { Duck } from "../models/Duck";
+import type { DuckService } from "../services/DuckService";
+
+// The table reads fields; it doesn't call save/update/delete. So a bare
+// cast is fine for the service argument — no method will dereference it.
+const stubService = {} as DuckService;
+const makeDuck = (data: { id: number; color: string; size: string; price: number; quantity: number; deleted?: boolean }): Duck =>
+  new Duck(stubService, { ...data, deleted: data.deleted ?? false });
 
 const sampleDucks: Duck[] = [
-  { id: 1, color: "Red", size: "Large", price: 10, quantity: 5, deleted: false },
-  { id: 2, color: "Green", size: "Small", price: 8, quantity: 20, deleted: false },
+  makeDuck({ id: 1, color: "Red", size: "Large", price: 10, quantity: 5 }),
+  makeDuck({ id: 2, color: "Green", size: "Small", price: 8, quantity: 20 }),
 ];
 
 const noop = () => {};
@@ -67,9 +74,9 @@ describe("DuckTable", () => {
 
   it("should filter rows by the global search input", async () => {
     const ducks: Duck[] = [
-      { id: 1, color: "Red", size: "Large", price: 10, quantity: 5, deleted: false },
-      { id: 2, color: "Green", size: "Small", price: 8, quantity: 10, deleted: false },
-      { id: 3, color: "Yellow", size: "Medium", price: 7, quantity: 15, deleted: false },
+      makeDuck({ id: 1, color: "Red", size: "Large", price: 10, quantity: 5 }),
+      makeDuck({ id: 2, color: "Green", size: "Small", price: 8, quantity: 10 }),
+      makeDuck({ id: 3, color: "Yellow", size: "Medium", price: 7, quantity: 15 }),
     ];
     const user = userEvent.setup();
     render(<DuckTable ducks={ducks} onEdit={noop} onDelete={noop} />);
@@ -82,14 +89,15 @@ describe("DuckTable", () => {
   });
 
   it("should paginate and allow moving to the next page", async () => {
-    const ducks: Duck[] = Array.from({ length: 15 }, (_, i) => ({
-      id: i + 1,
-      color: "Red",
-      size: "Large",
-      price: 10,
-      quantity: i + 1,
-      deleted: false,
-    }));
+    const ducks: Duck[] = Array.from({ length: 15 }, (_, i) =>
+      makeDuck({
+        id: i + 1,
+        color: "Red",
+        size: "Large",
+        price: 10,
+        quantity: i + 1,
+      }),
+    );
     const user = userEvent.setup();
     render(<DuckTable ducks={ducks} onEdit={noop} onDelete={noop} />);
 
@@ -106,9 +114,9 @@ describe("DuckTable", () => {
   it("should re-sort rows when a sortable column header is clicked", async () => {
     // Three ducks with distinct prices so we can prove the sort order switches.
     const ducks: Duck[] = [
-      { id: 1, color: "Red", size: "Large", price: 20, quantity: 5, deleted: false },
-      { id: 2, color: "Green", size: "Small", price: 10, quantity: 15, deleted: false },
-      { id: 3, color: "Yellow", size: "Medium", price: 5, quantity: 10, deleted: false },
+      makeDuck({ id: 1, color: "Red", size: "Large", price: 20, quantity: 5 }),
+      makeDuck({ id: 2, color: "Green", size: "Small", price: 10, quantity: 15 }),
+      makeDuck({ id: 3, color: "Yellow", size: "Medium", price: 5, quantity: 10 }),
     ];
     const user = userEvent.setup();
     render(<DuckTable ducks={ducks} onEdit={noop} onDelete={noop} />);
